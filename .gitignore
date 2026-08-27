@@ -1,0 +1,14 @@
+﻿.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+
+.qwen_profile/
+
+output/*
+!output/.gitkeep
+
+.idea/
+.vscode/
+.qwen_cdp_profile/
