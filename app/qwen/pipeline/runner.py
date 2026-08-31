@@ -15,12 +15,16 @@ from app.qwen.pipeline.gates import (
 from app.qwen.pipeline.models import QwenPipelineResult
 from app.qwen.tasks import QwenTask
 
+from app.qwen.pipeline.serialization import (
+    write_pipeline_result,
+)
+
 
 class QwenPipelineRunner:
     def __init__(
-        self,
-        *,
-        batch_runner: QwenBatchRunner,
+            self,
+            *,
+            batch_runner: QwenBatchRunner,
     ) -> None:
         self.batch_runner = batch_runner
         self.batch_dir = Path(
@@ -28,10 +32,10 @@ class QwenPipelineRunner:
         )
 
     def run_batch_phase(
-        self,
-        tasks: list[QwenTask],
-        *,
-        resume: bool = False,
+            self,
+            tasks: list[QwenTask],
+            *,
+            resume: bool = False,
     ) -> QwenBatchSummary:
         self.batch_runner.run(
             tasks,
@@ -43,11 +47,11 @@ class QwenPipelineRunner:
         )
 
     def run_package_phase(
-        self,
-        summary: QwenBatchSummary,
-        *,
-        package_path: Path,
-        package_id: str,
+            self,
+            summary: QwenBatchSummary,
+            *,
+            package_path: Path,
+            package_id: str,
     ) -> Path:
         if not can_export_package(summary):
             raise ValueError(
@@ -71,13 +75,24 @@ class QwenPipelineRunner:
 
         return package_path
 
+    def _finalize_result(
+            self,
+            result: QwenPipelineResult,
+    ) -> QwenPipelineResult:
+        write_pipeline_result(
+            result,
+            self.batch_dir / "pipeline_result.json",
+        )
+
+        return result
+
     def run(
-        self,
-        tasks: list[QwenTask],
-        *,
-        package_path: Path,
-        package_id: str,
-        resume: bool = False,
+            self,
+            tasks: list[QwenTask],
+            *,
+            package_path: Path,
+            package_id: str,
+            resume: bool = False,
     ) -> QwenPipelineResult:
         started_at = datetime.now()
 
@@ -96,10 +111,47 @@ class QwenPipelineRunner:
             )
 
             if post_batch_status == "blocked":
-                return QwenPipelineResult(
-                    status="blocked",
+                return self._finalize_result(
+                    QwenPipelineResult(
+                        status="blocked",
+                        batch_dir=self.batch_dir,
+                        package_path=None,
+                        planned_count=(
+                            summary.planned_count
+                        ),
+                        pass_count=(
+                            summary.pass_count
+                        ),
+                        fail_count=(
+                            summary.fail_count
+                        ),
+                        blocked_count=(
+                            summary.blocked_count
+                        ),
+                        pending_count=(
+                            summary.pending_count
+                        ),
+                        package_verified=False,
+                        started_at=started_at,
+                        finished_at=datetime.now(),
+                    )
+                )
+
+            final_package_path = (
+                self.run_package_phase(
+                    summary,
+                    package_path=package_path,
+                    package_id=package_id,
+                )
+            )
+
+            return self._finalize_result(
+                QwenPipelineResult(
+                    status=post_batch_status,
                     batch_dir=self.batch_dir,
-                    package_path=None,
+                    package_path=(
+                        final_package_path
+                    ),
                     planned_count=(
                         summary.planned_count
                     ),
@@ -115,43 +167,10 @@ class QwenPipelineRunner:
                     pending_count=(
                         summary.pending_count
                     ),
-                    package_verified=False,
+                    package_verified=True,
                     started_at=started_at,
                     finished_at=datetime.now(),
                 )
-
-            final_package_path = (
-                self.run_package_phase(
-                    summary,
-                    package_path=package_path,
-                    package_id=package_id,
-                )
-            )
-
-            return QwenPipelineResult(
-                status=post_batch_status,
-                batch_dir=self.batch_dir,
-                package_path=(
-                    final_package_path
-                ),
-                planned_count=(
-                    summary.planned_count
-                ),
-                pass_count=(
-                    summary.pass_count
-                ),
-                fail_count=(
-                    summary.fail_count
-                ),
-                blocked_count=(
-                    summary.blocked_count
-                ),
-                pending_count=(
-                    summary.pending_count
-                ),
-                package_verified=True,
-                started_at=started_at,
-                finished_at=datetime.now(),
             )
 
         except Exception as exc:
@@ -178,20 +197,22 @@ class QwenPipelineRunner:
                     summary.pending_count
                 )
 
-            return QwenPipelineResult(
-                status="failed",
-                batch_dir=self.batch_dir,
-                package_path=None,
-                planned_count=planned_count,
-                pass_count=pass_count,
-                fail_count=fail_count,
-                blocked_count=blocked_count,
-                pending_count=pending_count,
-                package_verified=False,
-                error_type=(
-                    type(exc).__name__
-                ),
-                error_message=str(exc),
-                started_at=started_at,
-                finished_at=datetime.now(),
+            return self._finalize_result(
+                QwenPipelineResult(
+                    status="failed",
+                    batch_dir=self.batch_dir,
+                    package_path=None,
+                    planned_count=planned_count,
+                    pass_count=pass_count,
+                    fail_count=fail_count,
+                    blocked_count=blocked_count,
+                    pending_count=pending_count,
+                    package_verified=False,
+                    error_type=(
+                        type(exc).__name__
+                    ),
+                    error_message=str(exc),
+                    started_at=started_at,
+                    finished_at=datetime.now(),
+                )
             )
