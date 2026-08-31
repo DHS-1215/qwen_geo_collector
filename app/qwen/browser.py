@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from playwright.sync_api import (
     Browser,
     BrowserContext,
@@ -68,13 +70,41 @@ class QwenBrowserSession:
                 "browser context 尚未初始化"
             )
 
-        for page in self.context.pages:
-            if QWEN_DOMAIN in page.url:
-                return page
+        candidate_pages: list[Page] = []
 
-        raise QwenConnectionError(
-            "Chrome 中没有打开千问页面"
+        for page in self.context.pages:
+            hostname = (
+                    urlparse(page.url).hostname
+                    or ""
+            ).lower()
+
+            if hostname in {
+                "www.qianwen.com",
+                "qianwen.com",
+            }:
+                candidate_pages.append(
+                    page
+                )
+
+        if not candidate_pages:
+            opened_pages = [
+                page.url
+                for page in self.context.pages
+            ]
+
+            raise QwenConnectionError(
+                "Chrome 中没有打开千问主聊天页面。"
+                f"当前页面: {opened_pages}"
+            )
+
+        page = candidate_pages[0]
+
+        print(
+            "[QWEN PAGE]",
+            page.url,
         )
+
+        return page
 
     def close(self) -> None:
         """
