@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import time
 
 from playwright.sync_api import (
@@ -30,6 +32,9 @@ from app.qwen.selectors import (
     RISK_CONTROL_TEXTS,
     SEND_BUTTON_SELECTOR,
     SOURCE_LINK_SELECTOR,
+    QUICK_SOURCE_CARD_SELECTOR,
+    QUICK_SOURCE_ENTRY_SELECTOR,
+    QUICK_SOURCE_PANEL_SELECTOR,
 )
 
 NEW_CHAT_SETTLE_MS = 1500
@@ -415,6 +420,306 @@ class QwenRunner:
         raise QwenTimeoutError(
             f"等待回答完成超时: {turn_id}"
         )
+
+    # =========================================
+    # Quick 来源
+    # =========================================
+
+    def _get_quick_source_req_id(
+            self,
+            answer_wrap: Locator,
+    ) -> str | None:
+        entries = answer_wrap.locator(
+            QUICK_SOURCE_ENTRY_SELECTOR
+        )
+
+        print(
+            "[QUICK SOURCE] entry count:",
+            entries.count(),
+        )
+
+        if entries.count() == 0:
+            return None
+
+        entry = entries.first
+
+        entry_id = (
+                entry.get_attribute("id")
+                or ""
+        ).strip()
+
+        prefix = "reference-link-anchor-"
+
+        if not entry_id.startswith(prefix):
+            return None
+
+        req_id = entry_id[
+                 len(prefix):
+                 ].strip()
+
+        return req_id or None
+
+    def _get_quick_source_cards(
+            self,
+            req_id: str,
+    ) -> list[Locator]:
+        panel = self.page.locator(
+            QUICK_SOURCE_PANEL_SELECTOR
+        )
+
+        if panel.count() == 0:
+            return []
+
+        cards = panel.locator(
+            QUICK_SOURCE_CARD_SELECTOR
+        )
+
+        matched: list[Locator] = []
+
+        for index in range(
+                cards.count()
+        ):
+            card = cards.nth(index)
+
+            raw = card.get_attribute(
+                "data-click-extra"
+            )
+
+            if not raw:
+                continue
+
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            if (
+                    str(
+                        data.get("req_id")
+                        or ""
+                    )
+                    == req_id
+            ):
+                matched.append(card)
+
+        return matched
+
+    def _open_quick_sources(
+            self,
+            answer_wrap: Locator,
+            req_id: str,
+            timeout_seconds: int = 5,
+    ) -> list[Locator]:
+        # 如果当前右侧已经是这一条回答的来源，
+        # 不要再次点击，否则会把面板关闭。
+        cards = (
+            self._get_quick_source_cards(
+                req_id
+            )
+        )
+
+        if cards:
+            print(
+                "[QUICK SOURCE] "
+                "panel already open"
+            )
+            return cards
+
+        source_texts = answer_wrap.get_by_text(
+            re.compile(
+                r"^\s*\d+\s*[篇条]来源\s*$"
+            )
+        )
+
+        print(
+            "[QUICK SOURCE] "
+            "source text count:",
+            source_texts.count(),
+        )
+
+        if source_texts.count() == 0:
+            return []
+
+        source_text = (
+            source_texts.first
+        )
+
+        try:
+            source_text.click(
+                timeout=3000
+            )
+
+            print(
+                "[QUICK SOURCE] "
+                "open click success"
+            )
+
+        except Exception as exc:
+            print(
+                "[QUICK SOURCE] "
+                "normal click failed:",
+                type(exc).__name__,
+            )
+
+            try:
+                source_text.evaluate(
+                    "el => el.click()"
+                )
+
+                print(
+                    "[QUICK SOURCE] "
+                    "DOM click success"
+                )
+
+            except Exception as dom_exc:
+                print(
+                    "[QUICK SOURCE] "
+                    "DOM click failed:",
+                    type(dom_exc).__name__,
+                )
+                return []
+
+        start = time.monotonic()
+
+        while (
+                time.monotonic() - start
+                < timeout_seconds
+        ):
+            cards = (
+                self._get_quick_source_cards(
+                    req_id
+                )
+            )
+
+            if cards:
+                print(
+                    "[QUICK SOURCE] cards ready:",
+                    len(cards),
+                )
+                return cards
+
+            self.page.wait_for_timeout(
+                200
+            )
+
+        print(
+            "[QUICK SOURCE] "
+            "source cards timeout"
+        )
+
+        return []
+
+    def _extract_quick_sources(
+            self,
+            answer_wrap: Locator,
+    ) -> list[QwenSource]:
+        req_id = (
+            self._get_quick_source_req_id(
+                answer_wrap
+            )
+        )
+
+        print(
+            "[QUICK SOURCE] req_id:",
+            req_id,
+        )
+
+        if not req_id:
+            print(
+                "[QUICK SOURCE] "
+                "no source entry"
+            )
+            return []
+
+        cards = self._open_quick_sources(
+            answer_wrap,
+            req_id,
+        )
+
+        print(
+            "[QUICK SOURCE] raw cards:",
+            len(cards),
+        )
+
+        sources: list[QwenSource] = []
+        seen_urls: set[str] = set()
+
+        for index, card in enumerate(
+                cards
+        ):
+            raw = card.get_attribute(
+                "data-click-extra"
+            )
+
+            if not raw:
+                continue
+
+            try:
+                data = json.loads(raw)
+
+            except json.JSONDecodeError:
+                print(
+                    f"[QUICK SOURCE] "
+                    f"card {index} invalid JSON"
+                )
+                continue
+
+            title = str(
+                data.get("title")
+                or ""
+            ).strip()
+
+            url = str(
+                data.get("ref_url")
+                or data.get("url")
+                or ""
+            ).strip()
+
+            rank_raw = str(
+                data.get("refer_num")
+                or ""
+            ).strip()
+
+            if not title or not url:
+                continue
+
+            if url in seen_urls:
+                continue
+
+            try:
+                rank = int(rank_raw)
+            except ValueError:
+                rank = len(sources) + 1
+
+            seen_urls.add(url)
+
+            source = QwenSource(
+                rank=rank,
+                title=title,
+                url=url,
+            )
+
+            sources.append(source)
+
+            print(
+                f"[QUICK SOURCE {source.rank}] "
+                f"{source.title}"
+            )
+            print(
+                f"                 "
+                f"{source.url}"
+            )
+
+        sources.sort(
+            key=lambda item: item.rank
+        )
+
+        print(
+            "[QUICK SOURCE] extracted:",
+            len(sources),
+        )
+
+        return sources
 
     # =========================================
     # Research 来源
@@ -1022,7 +1327,14 @@ class QwenRunner:
         sources: list[QwenSource] = []
         search_queries: list[str] = []
 
-        if mode == "research":
+        if mode == "quick":
+            sources = (
+                self._extract_quick_sources(
+                    answer_wrap
+                )
+            )
+
+        elif mode == "research":
             # 先提取搜索关键词
             search_queries = (
                 self._extract_search_queries(
