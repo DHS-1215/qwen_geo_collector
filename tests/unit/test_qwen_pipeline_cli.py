@@ -7,11 +7,15 @@ from unittest.mock import Mock
 
 from app.qwen.pipeline import cli as pipeline_cli
 
+from app.qwen.exceptions import (
+    QwenConnectionError,
+)
+
 
 def configure_cli_dependencies(
-    monkeypatch,
-    *,
-    pipeline_result,
+        monkeypatch,
+        *,
+        pipeline_result,
 ):
     tasks = [
         Mock(
@@ -102,9 +106,9 @@ def configure_cli_dependencies(
 
 
 def set_cli_args(
-    monkeypatch,
-    *,
-    resume: bool = False,
+        monkeypatch,
+        *,
+        resume: bool = False,
 ) -> None:
     argv = [
         "qwen-geo-pipeline",
@@ -160,15 +164,15 @@ def test_build_parser_parses_required_args() -> None:
     )
 
     assert (
-        args.package_id
-        == "qwen-run-001"
+            args.package_id
+            == "qwen-run-001"
     )
 
     assert args.resume is True
 
 
 def test_main_completed_returns_zero(
-    monkeypatch,
+        monkeypatch,
 ) -> None:
     set_cli_args(
         monkeypatch,
@@ -223,7 +227,7 @@ def test_main_completed_returns_zero(
 
 
 def test_main_blocked_returns_two(
-    monkeypatch,
+        monkeypatch,
 ) -> None:
     set_cli_args(
         monkeypatch
@@ -256,7 +260,7 @@ def test_main_blocked_returns_two(
 
 
 def test_main_failed_returns_one(
-    monkeypatch,
+        monkeypatch,
 ) -> None:
     set_cli_args(
         monkeypatch
@@ -286,3 +290,85 @@ def test_main_failed_returns_one(
     deps[
         "session"
     ].close.assert_called_once_with()
+
+
+def test_main_returns_three_when_task_loading_fails(
+        monkeypatch,
+) -> None:
+    set_cli_args(
+        monkeypatch
+    )
+
+    load_tasks = Mock(
+        side_effect=ValueError(
+            "模拟 CSV 格式错误"
+        )
+    )
+
+    monkeypatch.setattr(
+        pipeline_cli,
+        "load_tasks_csv",
+        load_tasks,
+    )
+
+    exit_code = pipeline_cli.main()
+
+    assert exit_code == (
+        pipeline_cli.EXIT_CLI_ERROR
+    )
+
+    load_tasks.assert_called_once_with(
+        Path(
+            "input/questions.csv"
+        )
+    )
+
+
+def test_main_returns_three_when_cdp_connection_fails(
+        monkeypatch,
+) -> None:
+    set_cli_args(
+        monkeypatch
+    )
+
+    tasks = [
+        Mock(
+            question_id="Q001",
+            mode="quick",
+        ),
+    ]
+
+    monkeypatch.setattr(
+        pipeline_cli,
+        "load_tasks_csv",
+        Mock(
+            return_value=tasks
+        ),
+    )
+
+    session = Mock()
+
+    session.connect.side_effect = (
+        QwenConnectionError(
+            "模拟 CDP 连接失败"
+        )
+    )
+
+    session_factory = Mock(
+        return_value=session
+    )
+
+    monkeypatch.setattr(
+        pipeline_cli,
+        "QwenBrowserSession",
+        session_factory,
+    )
+
+    exit_code = pipeline_cli.main()
+
+    assert exit_code == (
+        pipeline_cli.EXIT_CLI_ERROR
+    )
+
+    session.connect.assert_called_once_with()
+    session.close.assert_called_once_with()

@@ -8,6 +8,12 @@ from app.qwen.browser import QwenBrowserSession
 from app.qwen.pipeline.runner import QwenPipelineRunner
 from app.qwen.runner import QwenRunner
 from app.qwen.tasks import load_tasks_csv
+from app.qwen.exceptions import QwenConnectionError
+
+EXIT_OK = 0
+EXIT_FAILED = 1
+EXIT_BLOCKED = 2
+EXIT_CLI_ERROR = 3
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -62,9 +68,28 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    tasks = load_tasks_csv(
-        args.input
-    )
+    try:
+        tasks = load_tasks_csv(
+            args.input
+        )
+    except (
+            FileNotFoundError,
+            ValueError,
+            UnicodeDecodeError,
+    ) as exc:
+        print(
+            "[CLI ERROR]"
+        )
+        print(
+            "[ERROR TYPE]",
+            type(exc).__name__,
+        )
+        print(
+            "[ERROR MESSAGE]",
+            str(exc),
+        )
+
+        return EXIT_CLI_ERROR
 
     print(
         "[INPUT]",
@@ -99,7 +124,22 @@ def main() -> int:
     session = QwenBrowserSession()
 
     try:
-        page = session.connect()
+        try:
+            page = session.connect()
+        except QwenConnectionError as exc:
+            print(
+                "[CLI ERROR]"
+            )
+            print(
+                "[ERROR TYPE]",
+                type(exc).__name__,
+            )
+            print(
+                "[ERROR MESSAGE]",
+                str(exc),
+            )
+
+            return EXIT_CLI_ERROR
 
         runner = QwenRunner(
             page
@@ -165,7 +205,7 @@ def main() -> int:
                 "Resume collection after "
                 "manual verification."
             )
-            return 2
+            return EXIT_BLOCKED
 
         if result.status == "failed":
             print(
@@ -178,13 +218,13 @@ def main() -> int:
                 result.error_message,
             )
 
-            return 1
+            return EXIT_FAILED
 
         print(
             "[PIPELINE PASS]"
         )
 
-        return 0
+        return EXIT_OK
 
     finally:
         session.close()
