@@ -60,3 +60,16 @@ RESEARCH_WORKFLOW_SELECTOR = (
 SOURCE_LINK_SELECTOR = (
     'a[href^="http"]'
 )
+
+QUICK_SOURCE_PANEL_SELECTOR = (
+    '[data-testid="qianwen-layout-right-panel"]'
+)
+
+QUICK_SOURCE_CARD_SELECTOR = (
+    '[data-c="refer_panel"]'
+    '[data-d="card"]'
+)
+
+QUICK_SOURCE_ENTRY_SELECTOR = (
+    '[id^="reference-link-anchor-"]'
+)
