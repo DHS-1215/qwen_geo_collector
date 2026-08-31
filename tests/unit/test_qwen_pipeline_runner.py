@@ -12,6 +12,10 @@ from app.qwen.pipeline import runner as pipeline_runner_module
 from app.qwen.pipeline.runner import QwenPipelineRunner
 from app.qwen.tasks import QwenTask
 
+from app.qwen.pipeline.models import (
+    QwenPipelineResult,
+)
+
 
 def test_run_batch_phase_runs_tasks_and_loads_summary(
         tmp_path: Path,
@@ -537,3 +541,66 @@ def test_run_returns_failed_when_package_phase_fails(
     )
 
     assert result.pass_count == 2
+
+
+def test_finalize_result_writes_pipeline_result(
+        tmp_path: Path,
+        monkeypatch,
+) -> None:
+    batch_runner = Mock()
+    batch_runner.output_dir = (
+            tmp_path / "batch"
+    )
+
+    pipeline = QwenPipelineRunner(
+        batch_runner=batch_runner,
+    )
+
+    write_result = Mock()
+
+    monkeypatch.setattr(
+        pipeline_runner_module,
+        "write_pipeline_result",
+        write_result,
+    )
+
+    result = QwenPipelineResult(
+        status="completed",
+        batch_dir=tmp_path / "batch",
+        package_path=tmp_path / "package.zip",
+        planned_count=2,
+        pass_count=2,
+        fail_count=0,
+        blocked_count=0,
+        pending_count=0,
+        package_verified=True,
+        started_at=datetime(
+            2026,
+            8,
+            31,
+            9,
+            0,
+        ),
+        finished_at=datetime(
+            2026,
+            8,
+            31,
+            9,
+            10,
+        ),
+    )
+
+    returned = pipeline._finalize_result(
+        result
+    )
+
+    write_result.assert_called_once_with(
+        result,
+        (
+                tmp_path
+                / "batch"
+                / "pipeline_result.json"
+        ),
+    )
+
+    assert returned is result
