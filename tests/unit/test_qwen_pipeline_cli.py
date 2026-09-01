@@ -261,6 +261,10 @@ def set_cli_args(
         "output/package.zip",
         "--package-id",
         "qwen-run-001",
+        "--product-id",
+        "hongmao",
+        "--product-name",
+        "????",
         "--target-id",
         "hongmao",
         "--target-alias",
@@ -296,6 +300,10 @@ def test_build_parser_parses_required_args():
             "output/package.zip",
             "--package-id",
             "qwen-run-001",
+            "--product-id",
+            "hongmao",
+            "--product-name",
+            "????",
             "--target-id",
             "hongmao",
             "--target-alias",
@@ -319,8 +327,18 @@ def test_build_parser_parses_required_args():
     )
 
     assert (
-        args.package_id
+        args.batch_id
         == "qwen-run-001"
+    )
+
+    assert (
+        args.product_id
+        == "hongmao"
+    )
+
+    assert (
+        args.product_name
+        == "????"
     )
 
     assert (
@@ -446,7 +464,9 @@ def test_main_completed_returns_zero(
         package_path=Path(
             "output/package.zip"
         ),
-        package_id="qwen-run-001",
+        batch_id="qwen-run-001",
+        product_id="hongmao",
+        product_name="????",
         resume=True,
     )
 

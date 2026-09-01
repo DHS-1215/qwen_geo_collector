@@ -62,9 +62,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--batch-id",
         "--package-id",
+        dest="batch_id",
         required=True,
-        help="Unique GEO package identifier",
+        help=(
+            "Central GEO batch identifier. "
+            "--package-id is kept as a "
+            "compatibility alias."
+        ),
+    )
+
+    parser.add_argument(
+        "--product-id",
+        required=True,
+        help="Central GEO product identifier",
+    )
+
+    parser.add_argument(
+        "--product-name",
+        required=True,
+        help="Central GEO product name",
     )
 
     parser.add_argument(
@@ -217,8 +235,18 @@ def main() -> int:
     )
 
     print(
-        "[PACKAGE ID]",
-        args.package_id,
+        "[BATCH ID]",
+        args.batch_id,
+    )
+
+    print(
+        "[PRODUCT ID]",
+        args.product_id,
+    )
+
+    print(
+        "[PRODUCT NAME]",
+        args.product_name,
     )
 
     print(
@@ -288,7 +316,9 @@ def main() -> int:
         result = pipeline.run(
             tasks,
             package_path=args.package,
-            package_id=args.package_id,
+            batch_id=args.batch_id,
+            product_id=args.product_id,
+            product_name=args.product_name,
             resume=args.resume,
         )
 
