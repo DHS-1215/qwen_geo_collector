@@ -2,11 +2,15 @@
 
 import asyncio
 import json
+import socket
 from typing import Any
-from urllib import request
+from urllib import error, request
 
 from app.qwen.analysis.models import (
     MentionTarget,
+)
+from app.qwen.analysis.sentiment_errors import (
+    SentimentProviderError,
 )
 from app.qwen.analysis.sentiment_models import (
     SentimentLabel,
@@ -17,13 +21,13 @@ class OllamaSentimentClassifier:
     name = "ollama"
 
     def __init__(
-            self,
-            *,
-            model: str = "qwen2.5:7b",
-            base_url: str = (
-                    "http://127.0.0.1:11434"
-            ),
-            timeout_seconds: int = 120,
+        self,
+        *,
+        model: str = "qwen2.5:7b",
+        base_url: str = (
+            "http://127.0.0.1:11434"
+        ),
+        timeout_seconds: int = 120,
     ) -> None:
         self.model = model
         self.base_url = (
@@ -34,10 +38,10 @@ class OllamaSentimentClassifier:
         )
 
     async def classify(
-            self,
-            *,
-            answer_text: str,
-            target: MentionTarget,
+        self,
+        *,
+        answer_text: str,
+        target: MentionTarget,
     ) -> SentimentLabel:
         response = await asyncio.to_thread(
             self._request_classification,
@@ -45,14 +49,21 @@ class OllamaSentimentClassifier:
             target,
         )
 
-        return self._extract_label(
-            response
-        )
+        try:
+            return self._extract_label(
+                response
+            )
+
+        except ValueError as exc:
+            raise SentimentProviderError(
+                "invalid_response",
+                str(exc),
+            ) from exc
 
     def _request_classification(
-            self,
-            answer_text: str,
-            target: MentionTarget,
+        self,
+        answer_text: str,
+        target: MentionTarget,
     ) -> dict[str, Any]:
         payload = {
             "model": self.model,
@@ -111,8 +122,8 @@ class OllamaSentimentClassifier:
 
         req = request.Request(
             (
-                    self.base_url
-                    + "/api/chat"
+                self.base_url
+                + "/api/chat"
             ),
             data=body,
             headers={
@@ -123,27 +134,129 @@ class OllamaSentimentClassifier:
             method="POST",
         )
 
-        with request.urlopen(
+        try:
+            with request.urlopen(
                 req,
                 timeout=self.timeout_seconds,
-        ) as response:
-            raw = response.read()
+            ) as response:
+                raw = response.read()
 
-        return json.loads(
-            raw.decode("utf-8")
-        )
+        except error.HTTPError as exc:
+            status_code = exc.code
+
+            if status_code == 429:
+                error_type = (
+                    "rate_limit"
+                )
+
+            elif (
+                500
+                <= status_code
+                <= 599
+            ):
+                error_type = (
+                    "transient_api_error"
+                )
+
+            else:
+                error_type = (
+                    "api_error"
+                )
+
+            raise SentimentProviderError(
+                error_type,
+                (
+                    "ollama HTTP error: "
+                    f"{status_code}"
+                ),
+                status_code=status_code,
+            ) from exc
+
+        except (
+            TimeoutError,
+            socket.timeout,
+        ) as exc:
+            raise SentimentProviderError(
+                "timeout",
+                "ollama request timed out",
+            ) from exc
+
+        except error.URLError as exc:
+            if isinstance(
+                exc.reason,
+                (
+                    TimeoutError,
+                    socket.timeout,
+                ),
+            ):
+                raise SentimentProviderError(
+                    "timeout",
+                    "ollama request timed out",
+                ) from exc
+
+            raise SentimentProviderError(
+                "network_error",
+                (
+                    "ollama network error: "
+                    f"{exc.reason}"
+                ),
+            ) from exc
+
+        except OSError as exc:
+            raise SentimentProviderError(
+                "network_error",
+                (
+                    "ollama network error: "
+                    f"{exc}"
+                ),
+            ) from exc
+
+        try:
+            decoded = raw.decode(
+                "utf-8"
+            )
+
+            parsed = json.loads(
+                decoded
+            )
+
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ) as exc:
+            raise SentimentProviderError(
+                "invalid_response",
+                (
+                    "ollama response is not "
+                    "valid JSON"
+                ),
+            ) from exc
+
+        if not isinstance(
+            parsed,
+            dict,
+        ):
+            raise SentimentProviderError(
+                "invalid_response",
+                (
+                    "ollama response must "
+                    "be a JSON object"
+                ),
+            )
+
+        return parsed
 
     @staticmethod
     def _extract_label(
-            response: dict[str, Any],
+        response: dict[str, Any],
     ) -> SentimentLabel:
         message = response.get(
             "message"
         )
 
         if not isinstance(
-                message,
-                dict,
+            message,
+            dict,
         ):
             raise ValueError(
                 "ollama response missing message"
@@ -154,8 +267,8 @@ class OllamaSentimentClassifier:
         )
 
         if not isinstance(
-                content,
-                str,
+            content,
+            str,
         ):
             raise ValueError(
                 "ollama response missing content"

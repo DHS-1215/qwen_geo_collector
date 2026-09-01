@@ -2,6 +2,13 @@
 
 import asyncio
 
+import socket
+from urllib import error
+
+from app.qwen.analysis.sentiment_errors import (
+    SentimentProviderError,
+)
+
 import pytest
 
 from app.qwen.analysis.models import (
@@ -74,7 +81,7 @@ def test_extract_negative():
 
 def test_invalid_json_is_rejected():
     with pytest.raises(
-        ValueError
+            ValueError
     ):
         (
             OllamaSentimentClassifier
@@ -90,7 +97,7 @@ def test_invalid_json_is_rejected():
 
 def test_invalid_label_is_rejected():
     with pytest.raises(
-        ValueError
+            ValueError
     ):
         (
             OllamaSentimentClassifier
@@ -107,24 +114,24 @@ def test_invalid_label_is_rejected():
 
 
 def test_classify_uses_provider_response(
-    monkeypatch,
+        monkeypatch,
 ):
     classifier = (
         OllamaSentimentClassifier()
     )
 
     def fake_request(
-        answer_text,
-        target,
+            answer_text,
+            target,
     ):
         assert (
-            "鸿茅药酒"
-            in answer_text
+                "鸿茅药酒"
+                in answer_text
         )
 
         assert (
-            target.target_id
-            == "hongmao"
+                target.target_id
+                == "hongmao"
         )
 
         return {
@@ -151,3 +158,193 @@ def test_classify_uses_provider_response(
     )
 
     assert result == "neutral"
+
+
+def test_classify_invalid_output_becomes_provider_error(
+        monkeypatch,
+):
+    classifier = (
+        OllamaSentimentClassifier()
+    )
+
+    monkeypatch.setattr(
+        classifier,
+        "_request_classification",
+        lambda *_: {
+            "message": {
+                "content": "negative"
+            }
+        },
+    )
+
+    with pytest.raises(
+            SentimentProviderError
+    ) as exc_info:
+        asyncio.run(
+            classifier.classify(
+                answer_text="测试",
+                target=_target(),
+            )
+        )
+
+    assert (
+            exc_info.value.error_type
+            == "invalid_response"
+    )
+
+
+def test_http_429_maps_to_rate_limit(
+        monkeypatch,
+):
+    classifier = (
+        OllamaSentimentClassifier()
+    )
+
+    def fake_urlopen(
+            *args,
+            **kwargs,
+    ):
+        raise error.HTTPError(
+            url="http://test",
+            code=429,
+            msg="Too Many Requests",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr(
+        "app.qwen.analysis."
+        "sentiment_ollama."
+        "request.urlopen",
+        fake_urlopen,
+    )
+
+    with pytest.raises(
+            SentimentProviderError
+    ) as exc_info:
+        classifier._request_classification(
+            "测试",
+            _target(),
+        )
+
+    assert (
+            exc_info.value.error_type
+            == "rate_limit"
+    )
+
+    assert (
+            exc_info.value.status_code
+            == 429
+    )
+
+
+def test_http_500_maps_to_transient_error(
+        monkeypatch,
+):
+    classifier = (
+        OllamaSentimentClassifier()
+    )
+
+    def fake_urlopen(
+            *args,
+            **kwargs,
+    ):
+        raise error.HTTPError(
+            url="http://test",
+            code=503,
+            msg="Unavailable",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr(
+        "app.qwen.analysis."
+        "sentiment_ollama."
+        "request.urlopen",
+        fake_urlopen,
+    )
+
+    with pytest.raises(
+            SentimentProviderError
+    ) as exc_info:
+        classifier._request_classification(
+            "测试",
+            _target(),
+        )
+
+    assert (
+            exc_info.value.error_type
+            == "transient_api_error"
+    )
+
+
+def test_timeout_is_mapped(
+        monkeypatch,
+):
+    classifier = (
+        OllamaSentimentClassifier()
+    )
+
+    def fake_urlopen(
+            *args,
+            **kwargs,
+    ):
+        raise socket.timeout(
+            "timed out"
+        )
+
+    monkeypatch.setattr(
+        "app.qwen.analysis."
+        "sentiment_ollama."
+        "request.urlopen",
+        fake_urlopen,
+    )
+
+    with pytest.raises(
+            SentimentProviderError
+    ) as exc_info:
+        classifier._request_classification(
+            "测试",
+            _target(),
+        )
+
+    assert (
+            exc_info.value.error_type
+            == "timeout"
+    )
+
+
+def test_url_error_is_mapped_to_network_error(
+        monkeypatch,
+):
+    classifier = (
+        OllamaSentimentClassifier()
+    )
+
+    def fake_urlopen(
+            *args,
+            **kwargs,
+    ):
+        raise error.URLError(
+            "connection refused"
+        )
+
+    monkeypatch.setattr(
+        "app.qwen.analysis."
+        "sentiment_ollama."
+        "request.urlopen",
+        fake_urlopen,
+    )
+
+    with pytest.raises(
+            SentimentProviderError
+    ) as exc_info:
+        classifier._request_classification(
+            "测试",
+            _target(),
+        )
+
+    assert (
+            exc_info.value.error_type
+            == "network_error"
+    )
