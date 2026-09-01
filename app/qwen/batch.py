@@ -1,11 +1,13 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 
 from app.qwen.exceptions import (
     QwenRiskControlError,
+    QwenRefusalError,
 )
 from app.qwen.models import (
     QwenAnswerResult,
@@ -21,9 +23,14 @@ from app.qwen.serialization import (
 from app.qwen.tasks import (
     QwenTask,
 )
+from app.qwen.refusal import (
+    is_qwen_refusal,
+)
 
 QUICK_TASK_GAP_MS = 5000
 RESEARCH_TASK_GAP_MS = 12000
+REFUSAL_RETRY_WAIT_SECONDS = 600
+REFUSAL_MAX_RETRIES = 1
 
 
 class QwenBatchRunner:
@@ -215,6 +222,80 @@ class QwenBatchRunner:
 
         return passed
 
+    def _ask_with_refusal_retry(
+            self,
+            task: QwenTask,
+            *,
+            timeout_seconds: int,
+    ) -> QwenAnswerResult:
+        result = self.runner.ask(
+            task.question,
+            mode=task.mode,
+            new_chat=True,
+            answer_timeout_seconds=(
+                timeout_seconds
+            ),
+        )
+
+        if not is_qwen_refusal(
+                result.answer
+        ):
+            return result
+
+        print()
+        print(
+            "[REFUSAL DETECTED]",
+            task.question_id,
+            task.mode,
+        )
+
+        for retry_index in range(
+                REFUSAL_MAX_RETRIES
+        ):
+            print(
+                "[REFUSAL WAIT]",
+                REFUSAL_RETRY_WAIT_SECONDS,
+                "seconds",
+            )
+
+            time.sleep(
+                REFUSAL_RETRY_WAIT_SECONDS
+            )
+
+            print(
+                "[REFUSAL RETRY]",
+                retry_index + 1,
+                "/",
+                REFUSAL_MAX_RETRIES,
+            )
+
+            result = self.runner.ask(
+                task.question,
+                mode=task.mode,
+                new_chat=True,
+                answer_timeout_seconds=(
+                    timeout_seconds
+                ),
+            )
+
+            if not is_qwen_refusal(
+                    result.answer
+            ):
+                print(
+                    "[REFUSAL RECOVERED]",
+                    task.question_id,
+                    task.mode,
+                )
+
+                return result
+
+        raise QwenRefusalError(
+            "Qwen refusal persisted after "
+            f"{REFUSAL_MAX_RETRIES} retry: "
+            f"{task.question_id} "
+            f"{task.mode}"
+        )
+
     def run_task(
             self,
             task: QwenTask,
@@ -238,13 +319,13 @@ class QwenBatchRunner:
             else 90
         )
 
-        result = self.runner.ask(
-            task.question,
-            mode=task.mode,
-            new_chat=True,
-            answer_timeout_seconds=(
-                timeout_seconds
-            ),
+        result = (
+            self._ask_with_refusal_retry(
+                task,
+                timeout_seconds=(
+                    timeout_seconds
+                ),
+            )
         )
 
         # Runner 只负责网页采集，
@@ -423,7 +504,13 @@ class QwenBatchRunner:
             # 风控：立即暂停整个批次
             # =====================================
 
-            except QwenRiskControlError as exc:
+            except (
+
+                    QwenRiskControlError,
+
+                    QwenRefusalError,
+
+            ) as exc:
                 print()
 
                 print(
@@ -481,9 +568,21 @@ class QwenBatchRunner:
                     "[BATCH PAUSED]"
                 )
 
+                if isinstance(
+                        exc,
+                        QwenRefusalError,
+                ):
+                    reason = (
+                        "persistent refusal detected"
+                    )
+                else:
+                    reason = (
+                        "risk control detected"
+                    )
+
                 print(
-                    "[REASON] "
-                    "risk control detected"
+                    "[REASON]",
+                    reason,
                 )
 
                 batch_paused = True
