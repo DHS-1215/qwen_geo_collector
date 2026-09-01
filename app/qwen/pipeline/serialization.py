@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -23,8 +23,6 @@ def write_pipeline_result(
         mode="json"
     )
 
-    # 持久化 JSON 中统一使用 POSIX 风格路径，
-    # 避免 Windows / Linux 路径分隔符不一致。
     data["batch_dir"] = (
         result.batch_dir.as_posix()
     )
@@ -32,6 +30,28 @@ def write_pipeline_result(
     if result.package_path is not None:
         data["package_path"] = (
             result.package_path.as_posix()
+        )
+
+    if (
+        result.analysis_result_path
+        is not None
+    ):
+        data[
+            "analysis_result_path"
+        ] = (
+            result.analysis_result_path
+            .as_posix()
+        )
+
+    if (
+        result.analysis_metrics_path
+        is not None
+    ):
+        data[
+            "analysis_metrics_path"
+        ] = (
+            result.analysis_metrics_path
+            .as_posix()
         )
 
     path.write_text(

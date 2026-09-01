@@ -604,3 +604,319 @@ def test_finalize_result_writes_pipeline_result(
     )
 
     assert returned is result
+
+
+def test_analysis_configuration_must_be_complete(
+        tmp_path: Path,
+) -> None:
+    batch_runner = Mock()
+    batch_runner.output_dir = tmp_path
+
+    with pytest.raises(
+            ValueError,
+            match="cannot be empty",
+    ):
+        QwenPipelineRunner(
+            batch_runner=batch_runner,
+            analysis_targets=[],
+            sentiment_classifier=Mock(),
+        )
+
+
+def test_run_analysis_phase_calls_geo_analysis(
+        tmp_path: Path,
+        monkeypatch,
+) -> None:
+    import asyncio
+
+    from app.qwen.analysis.models import (
+        MentionTarget,
+    )
+
+    batch_runner = Mock()
+    batch_runner.output_dir = tmp_path
+
+    classifier = Mock()
+
+    targets = [
+        MentionTarget(
+            target_id="hongmao",
+            aliases=["鸿茅药酒"],
+        )
+    ]
+
+    expected = Mock()
+
+    async def fake_geo_analysis(
+            batch_dir,
+            passed_targets,
+            passed_classifier,
+    ):
+        assert batch_dir == tmp_path
+        assert passed_targets == targets
+        assert (
+                passed_classifier
+                is classifier
+        )
+
+        return expected
+
+    monkeypatch.setattr(
+        pipeline_runner_module,
+        "run_geo_analysis",
+        fake_geo_analysis,
+    )
+
+    pipeline = QwenPipelineRunner(
+        batch_runner=batch_runner,
+        analysis_targets=targets,
+        sentiment_classifier=(
+            classifier
+        ),
+    )
+
+    result = (
+        pipeline.run_analysis_phase()
+    )
+
+    assert result is expected
+
+
+def test_analysis_errors_make_pipeline_partial(
+        tmp_path: Path,
+) -> None:
+    from app.qwen.analysis.models import (
+        MentionTarget,
+    )
+
+    batch_runner = Mock()
+    batch_runner.output_dir = (
+            tmp_path / "batch"
+    )
+
+    pipeline = QwenPipelineRunner(
+        batch_runner=batch_runner,
+        analysis_targets=[
+            MentionTarget(
+                target_id="hongmao",
+                aliases=["鸿茅药酒"],
+            )
+        ],
+        sentiment_classifier=Mock(),
+    )
+
+    summary = build_summary(
+        pass_count=2,
+    )
+
+    analysis = Mock()
+    analysis.sentiment.details = [
+        Mock(
+            sentiment_status="success"
+        ),
+        Mock(
+            sentiment_status="timeout"
+        ),
+    ]
+
+    pipeline.run_batch_phase = Mock(
+        return_value=summary
+    )
+
+    pipeline.run_analysis_phase = Mock(
+        return_value=analysis
+    )
+
+    pipeline.run_package_phase = Mock(
+        return_value=(
+                tmp_path / "package.zip"
+        )
+    )
+
+    pipeline.run_analysis_persistence_phase = Mock(
+        return_value=(
+            tmp_path
+            / "batch"
+            / "geo_analysis_result.json",
+            tmp_path
+            / "batch"
+            / "geo_analysis_metrics.json",
+        )
+    )
+
+    result = pipeline.run(
+        [],
+        package_path=(
+                tmp_path / "package.zip"
+        ),
+        package_id="test",
+    )
+
+    assert result.status == "partial"
+
+    assert (
+            result.analysis_status
+            == "completed_with_warnings"
+    )
+
+    assert (
+            result.analysis_error_count
+            == 1
+    )
+
+    assert (
+            result.analysis_verified
+            is True
+    )
+
+
+def test_analysis_success_is_persisted(
+        tmp_path: Path,
+) -> None:
+    from app.qwen.analysis.models import (
+        MentionTarget,
+    )
+
+    batch_runner = Mock()
+    batch_runner.output_dir = (
+            tmp_path / "batch"
+    )
+
+    pipeline = QwenPipelineRunner(
+        batch_runner=batch_runner,
+        analysis_targets=[
+            MentionTarget(
+                target_id="hongmao",
+                aliases=["鸿茅药酒"],
+            )
+        ],
+        sentiment_classifier=Mock(),
+    )
+
+    summary = build_summary(
+        pass_count=2,
+    )
+
+    analysis = Mock()
+    analysis.sentiment.details = []
+
+    result_path = (
+            tmp_path
+            / "batch"
+            / "geo_analysis_result.json"
+    )
+
+    metrics_path = (
+            tmp_path
+            / "batch"
+            / "geo_analysis_metrics.json"
+    )
+
+    pipeline.run_batch_phase = Mock(
+        return_value=summary
+    )
+
+    pipeline.run_analysis_phase = Mock(
+        return_value=analysis
+    )
+
+    pipeline.run_package_phase = Mock(
+        return_value=(
+                tmp_path / "package.zip"
+        )
+    )
+
+    pipeline.run_analysis_persistence_phase = Mock(
+        return_value=(
+            result_path,
+            metrics_path,
+        )
+    )
+
+    result = pipeline.run(
+        [],
+        package_path=(
+                tmp_path / "package.zip"
+        ),
+        package_id="test",
+    )
+
+    assert result.status == "completed"
+
+    assert (
+            result.analysis_status
+            == "completed"
+    )
+
+    assert (
+            result.analysis_result_path
+            == result_path
+    )
+
+    assert (
+            result.analysis_metrics_path
+            == metrics_path
+    )
+
+    assert result.analysis_verified
+
+
+def test_analysis_failure_fails_pipeline(
+        tmp_path: Path,
+) -> None:
+    from app.qwen.analysis.models import (
+        MentionTarget,
+    )
+
+    batch_runner = Mock()
+    batch_runner.output_dir = (
+            tmp_path / "batch"
+    )
+
+    pipeline = QwenPipelineRunner(
+        batch_runner=batch_runner,
+        analysis_targets=[
+            MentionTarget(
+                target_id="hongmao",
+                aliases=["鸿茅药酒"],
+            )
+        ],
+        sentiment_classifier=Mock(),
+    )
+
+    summary = build_summary(
+        pass_count=2,
+    )
+
+    pipeline.run_batch_phase = Mock(
+        return_value=summary
+    )
+
+    pipeline.run_analysis_phase = Mock(
+        side_effect=ValueError(
+            "analysis broken"
+        )
+    )
+
+    pipeline.run_package_phase = Mock()
+
+    result = pipeline.run(
+        [],
+        package_path=(
+                tmp_path / "package.zip"
+        ),
+        package_id="test",
+    )
+
+    assert result.status == "failed"
+
+    assert (
+            result.analysis_status
+            == "failed"
+    )
+
+    assert not (
+        result.analysis_verified
+    )
+
+    pipeline.run_package_phase.assert_not_called()
