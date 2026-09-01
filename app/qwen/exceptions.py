@@ -14,6 +14,10 @@ class QwenRiskControlError(QwenCollectorError):
     """千问真人验证 / 风控。"""
 
 
+class QwenRefusalError(QwenCollectorError):
+    """Qwen始终拒绝回应。"""
+
+
 class QwenTimeoutError(QwenCollectorError):
     """等待页面状态超时。"""
 
