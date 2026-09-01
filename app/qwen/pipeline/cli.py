@@ -1,14 +1,28 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
+from app.qwen.analysis.models import (
+    MentionTarget,
+)
+from app.qwen.analysis.sentiment_config import (
+    load_sentiment_config,
+)
+from app.qwen.analysis.sentiment_factory import (
+    create_sentiment_classifier,
+)
 from app.qwen.batch import QwenBatchRunner
 from app.qwen.browser import QwenBrowserSession
-from app.qwen.pipeline.runner import QwenPipelineRunner
+from app.qwen.exceptions import (
+    QwenConnectionError,
+)
+from app.qwen.pipeline.runner import (
+    QwenPipelineRunner,
+)
 from app.qwen.runner import QwenRunner
 from app.qwen.tasks import load_tasks_csv
-from app.qwen.exceptions import QwenConnectionError
+
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -21,7 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="qwen-geo-pipeline",
         description=(
             "Alibaba Qianwen GEO collection, "
-            "package export and verification pipeline"
+            "analysis, package export and "
+            "verification pipeline"
         ),
     )
 
@@ -53,6 +68,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--target-id",
+        required=True,
+        help=(
+            "Analysis target identifier, "
+            "for example hongmao"
+        ),
+    )
+
+    parser.add_argument(
+        "--target-alias",
+        action="append",
+        required=True,
+        help=(
+            "Analysis target alias. "
+            "Repeat this option for "
+            "multiple aliases."
+        ),
+    )
+
+    parser.add_argument(
         "--resume",
         action="store_true",
         help=(
@@ -64,6 +99,73 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _print_cli_error(
+    exc: Exception,
+) -> None:
+    print(
+        "[CLI ERROR]"
+    )
+
+    print(
+        "[ERROR TYPE]",
+        type(exc).__name__,
+    )
+
+    print(
+        "[ERROR MESSAGE]",
+        str(exc),
+    )
+
+
+def _build_target(
+    *,
+    target_id: str,
+    aliases: list[str],
+) -> MentionTarget:
+    normalized_target_id = (
+        target_id.strip()
+    )
+
+    if not normalized_target_id:
+        raise ValueError(
+            "target id cannot be empty"
+        )
+
+    normalized_aliases: list[str] = []
+
+    seen: set[str] = set()
+
+    for alias in aliases:
+        normalized = alias.strip()
+
+        if not normalized:
+            continue
+
+        if normalized in seen:
+            continue
+
+        seen.add(
+            normalized
+        )
+
+        normalized_aliases.append(
+            normalized
+        )
+
+    if not normalized_aliases:
+        raise ValueError(
+            "at least one non-empty "
+            "target alias is required"
+        )
+
+    return MentionTarget(
+        target_id=(
+            normalized_target_id
+        ),
+        aliases=normalized_aliases,
+    )
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -72,21 +174,29 @@ def main() -> int:
         tasks = load_tasks_csv(
             args.input
         )
+
+        target = _build_target(
+            target_id=args.target_id,
+            aliases=args.target_alias,
+        )
+
+        sentiment_config = (
+            load_sentiment_config()
+        )
+
+        sentiment_classifier = (
+            create_sentiment_classifier(
+                sentiment_config
+            )
+        )
+
     except (
-            FileNotFoundError,
-            ValueError,
-            UnicodeDecodeError,
+        FileNotFoundError,
+        ValueError,
+        UnicodeDecodeError,
     ) as exc:
-        print(
-            "[CLI ERROR]"
-        )
-        print(
-            "[ERROR TYPE]",
-            type(exc).__name__,
-        )
-        print(
-            "[ERROR MESSAGE]",
-            str(exc),
+        _print_cli_error(
+            exc
         )
 
         return EXIT_CLI_ERROR
@@ -121,22 +231,37 @@ def main() -> int:
         len(tasks),
     )
 
+    print(
+        "[TARGET ID]",
+        target.target_id,
+    )
+
+    print(
+        "[TARGET ALIASES]",
+        ", ".join(
+            target.aliases
+        ),
+    )
+
+    print(
+        "[SENTIMENT PROVIDER]",
+        sentiment_config.provider,
+    )
+
+    print(
+        "[SENTIMENT MODEL]",
+        sentiment_config.model,
+    )
+
     session = QwenBrowserSession()
 
     try:
         try:
             page = session.connect()
+
         except QwenConnectionError as exc:
-            print(
-                "[CLI ERROR]"
-            )
-            print(
-                "[ERROR TYPE]",
-                type(exc).__name__,
-            )
-            print(
-                "[ERROR MESSAGE]",
-                str(exc),
+            _print_cli_error(
+                exc
             )
 
             return EXIT_CLI_ERROR
@@ -152,6 +277,12 @@ def main() -> int:
 
         pipeline = QwenPipelineRunner(
             batch_runner=batch_runner,
+            analysis_targets=[
+                target
+            ],
+            sentiment_classifier=(
+                sentiment_classifier
+            ),
         )
 
         result = pipeline.run(
@@ -193,10 +324,46 @@ def main() -> int:
             result.package_verified,
         )
 
-        if result.package_path is not None:
+        print(
+            "[ANALYSIS STATUS]",
+            result.analysis_status,
+        )
+
+        print(
+            "[ANALYSIS VERIFIED]",
+            result.analysis_verified,
+        )
+
+        print(
+            "[ANALYSIS ERROR COUNT]",
+            result.analysis_error_count,
+        )
+
+        if (
+            result.package_path
+            is not None
+        ):
             print(
                 "[PACKAGE OUTPUT]",
                 result.package_path,
+            )
+
+        if (
+            result.analysis_result_path
+            is not None
+        ):
+            print(
+                "[ANALYSIS RESULT]",
+                result.analysis_result_path,
+            )
+
+        if (
+            result.analysis_metrics_path
+            is not None
+        ):
+            print(
+                "[ANALYSIS METRICS]",
+                result.analysis_metrics_path,
             )
 
         if result.status == "blocked":
@@ -205,6 +372,7 @@ def main() -> int:
                 "Resume collection after "
                 "manual verification."
             )
+
             return EXIT_BLOCKED
 
         if result.status == "failed":
@@ -228,3 +396,9 @@ def main() -> int:
 
     finally:
         session.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(
+        main()
+    )

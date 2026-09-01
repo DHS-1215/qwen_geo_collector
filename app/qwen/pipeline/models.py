@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +25,24 @@ class QwenPipelineResult(BaseModel):
     pending_count: int
 
     package_verified: bool = False
+
+    analysis_status: Literal[
+        "not_run",
+        "completed",
+        "completed_with_warnings",
+        "failed",
+    ] = "not_run"
+
+    analysis_result_path: (
+        Path | None
+    ) = None
+
+    analysis_metrics_path: (
+        Path | None
+    ) = None
+
+    analysis_verified: bool = False
+    analysis_error_count: int = 0
 
     error_type: str | None = None
     error_message: str | None = None

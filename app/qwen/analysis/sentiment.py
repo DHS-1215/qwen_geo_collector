@@ -15,6 +15,9 @@ from app.qwen.analysis.sentiment_models import (
 from app.qwen.analysis.sentiment_rules import (
     apply_negative_priority_rules,
 )
+from app.qwen.analysis.sentiment_errors import (
+    SentimentProviderError,
+)
 
 
 class SentimentClassifier(Protocol):
@@ -84,19 +87,72 @@ async def analyze_sentiment(
             raw_label
         )
 
-    except Exception as exc:
+
+    except SentimentProviderError as exc:
+
+        if exc.error_type == "rate_limit":
+
+            status = "rate_limited"
+
+
+        elif exc.error_type == "timeout":
+
+            status = "timeout"
+
+
+        else:
+
+            status = "failed"
+
         return SentimentResult(
+
             question_id=question_id,
+
             mode=mode,
+
             target_id=target.target_id,
+
             classification_planned=True,
-            sentiment_status="failed",
+
+            sentiment_status=status,
+
             provider=provider,
+
             reason=str(exc),
-            error_type=(
-                type(exc).__name__
-            ),
+
+            error_type=exc.error_type,
+
             error_message=str(exc),
+
+        )
+
+
+    except Exception as exc:
+
+        return SentimentResult(
+
+            question_id=question_id,
+
+            mode=mode,
+
+            target_id=target.target_id,
+
+            classification_planned=True,
+
+            sentiment_status="failed",
+
+            provider=provider,
+
+            reason=str(exc),
+
+            error_type=(
+
+                type(exc).__name__
+
+            ),
+
+            error_message=str(exc),
+
         )
 
     rule = apply_negative_priority_rules(
