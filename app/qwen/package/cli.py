@@ -1,13 +1,13 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
 from app.qwen.package.exporter import (
-    export_package_zip,
+    export_central_package_zip,
 )
 from app.qwen.package.verifier import (
-    verify_package_zip,
+    verify_central_package_zip,
 )
 
 
@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="qwen-geo-package",
         description=(
-            "Qwen GEO package export "
+            "Qwen GEO central package export "
             "and verification tools"
         ),
     )
@@ -25,15 +25,12 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
 
-    # =========================================
-    # export
-    # =========================================
-
     export_parser = (
         subparsers.add_parser(
             "export",
             help=(
-                "Export a Qwen GEO ZIP package"
+                "Export a central "
+                "geo_package_v1 ZIP"
             ),
         )
     )
@@ -53,20 +50,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     export_parser.add_argument(
+        "--batch-id",
         "--package-id",
+        dest="batch_id",
         required=True,
-        help="Package identifier",
+        help=(
+            "Central GEO batch identifier. "
+            "--package-id is kept as a "
+            "compatibility alias."
+        ),
     )
 
-    # =========================================
-    # verify
-    # =========================================
+    export_parser.add_argument(
+        "--product-id",
+        required=True,
+        help="Central GEO product identifier",
+    )
+
+    export_parser.add_argument(
+        "--product-name",
+        required=True,
+        help="Central GEO product name",
+    )
 
     verify_parser = (
         subparsers.add_parser(
             "verify",
             help=(
-                "Verify a Qwen GEO ZIP package"
+                "Verify a central "
+                "geo_package_v1 ZIP"
             ),
         )
     )
@@ -87,10 +99,14 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "export":
-        result = export_package_zip(
-            batch_dir=args.batch_dir,
-            output_zip=args.output,
-            package_id=args.package_id,
+        result = (
+            export_central_package_zip(
+                batch_dir=args.batch_dir,
+                output_zip=args.output,
+                batch_id=args.batch_id,
+                product_id=args.product_id,
+                product_name=args.product_name,
+            )
         )
 
         print(
@@ -101,7 +117,7 @@ def main() -> None:
         return
 
     if args.command == "verify":
-        verify_package_zip(
+        verify_central_package_zip(
             args.package
         )
 
@@ -116,3 +132,7 @@ def main() -> None:
         f"unsupported command: "
         f"{args.command}"
     )
+
+
+if __name__ == "__main__":
+    main()

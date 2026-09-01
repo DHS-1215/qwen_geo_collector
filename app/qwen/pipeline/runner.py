@@ -25,13 +25,13 @@ from app.qwen.analysis.sentiment import (
 from app.qwen.batch import QwenBatchRunner
 from app.qwen.models import QwenBatchSummary
 from app.qwen.package.exporter import (
-    export_package_zip,
+    export_central_package_zip,
 )
 from app.qwen.package.reader import (
     load_batch_summary,
 )
 from app.qwen.package.verifier import (
-    verify_package_zip,
+    verify_central_package_zip,
 )
 from app.qwen.pipeline.gates import (
     can_export_package,
@@ -232,7 +232,9 @@ class QwenPipelineRunner:
         summary: QwenBatchSummary,
         *,
         package_path: Path,
-        package_id: str,
+        batch_id: str,
+        product_id: str,
+        product_name: str,
     ) -> Path:
         if not can_export_package(
             summary
@@ -247,13 +249,15 @@ class QwenPipelineRunner:
             package_path
         )
 
-        export_package_zip(
+        export_central_package_zip(
             batch_dir=self.batch_dir,
             output_zip=package_path,
-            package_id=package_id,
+            batch_id=batch_id,
+            product_id=product_id,
+            product_name=product_name,
         )
 
-        verify_package_zip(
+        verify_central_package_zip(
             package_path
         )
 
@@ -276,7 +280,9 @@ class QwenPipelineRunner:
         tasks: list[QwenTask],
         *,
         package_path: Path,
-        package_id: str,
+        batch_id: str,
+        product_id: str,
+        product_name: str,
         resume: bool = False,
     ) -> QwenPipelineResult:
         started_at = datetime.now()
@@ -364,7 +370,9 @@ class QwenPipelineRunner:
                 self.run_package_phase(
                     summary,
                     package_path=package_path,
-                    package_id=package_id,
+                    batch_id=batch_id,
+                    product_id=product_id,
+                    product_name=product_name,
                 )
             )
 

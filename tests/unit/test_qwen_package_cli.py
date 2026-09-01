@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
@@ -15,30 +15,69 @@ def test_package_cli_parser_export() -> None:
             "output/cli_smoke",
             "--output",
             "output/package.zip",
-            "--package-id",
+            "--batch-id",
             "qwen-test",
+            "--product-id",
+            "hongmao",
+            "--product-name",
+            "鸿茅药酒",
         ]
     )
 
     assert args.command == "export"
 
     assert (
-            args.batch_dir
-            == Path(
-        "output/cli_smoke"
-    )
-    )
-
-    assert (
-            args.output
-            == Path(
-        "output/package.zip"
-    )
+        args.batch_dir
+        == Path(
+            "output/cli_smoke"
+        )
     )
 
     assert (
-            args.package_id
-            == "qwen-test"
+        args.output
+        == Path(
+            "output/package.zip"
+        )
+    )
+
+    assert (
+        args.batch_id
+        == "qwen-test"
+    )
+
+    assert (
+        args.product_id
+        == "hongmao"
+    )
+
+    assert (
+        args.product_name
+        == "鸿茅药酒"
+    )
+
+
+def test_package_cli_package_id_alias() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(
+        [
+            "export",
+            "--batch-dir",
+            "output/cli_smoke",
+            "--output",
+            "output/package.zip",
+            "--package-id",
+            "legacy-name",
+            "--product-id",
+            "hongmao",
+            "--product-name",
+            "鸿茅药酒",
+        ]
+    )
+
+    assert (
+        args.batch_id
+        == "legacy-name"
     )
 
 
@@ -56,10 +95,10 @@ def test_package_cli_parser_verify() -> None:
     assert args.command == "verify"
 
     assert (
-            args.package
-            == Path(
-        "output/package.zip"
-    )
+        args.package
+        == Path(
+            "output/package.zip"
+        )
     )
 
 
@@ -68,30 +107,26 @@ def test_package_cli_main_export(
 ) -> None:
     state = {}
 
-    def fake_export_package_zip(
+    def fake_export_central_package_zip(
             *,
             batch_dir,
             output_zip,
-            package_id,
+            batch_id,
+            product_id,
+            product_name,
     ):
-        state[
-            "batch_dir"
-        ] = batch_dir
-
-        state[
-            "output_zip"
-        ] = output_zip
-
-        state[
-            "package_id"
-        ] = package_id
+        state["batch_dir"] = batch_dir
+        state["output_zip"] = output_zip
+        state["batch_id"] = batch_id
+        state["product_id"] = product_id
+        state["product_name"] = product_name
 
         return output_zip
 
     monkeypatch.setattr(
         cli,
-        "export_package_zip",
-        fake_export_package_zip,
+        "export_central_package_zip",
+        fake_export_central_package_zip,
     )
 
     monkeypatch.setattr(
@@ -103,30 +138,44 @@ def test_package_cli_main_export(
             "output/cli_smoke",
             "--output",
             "output/package.zip",
-            "--package-id",
+            "--batch-id",
             "qwen-test",
+            "--product-id",
+            "hongmao",
+            "--product-name",
+            "鸿茅药酒",
         ],
     )
 
     cli.main()
 
     assert (
-            state["batch_dir"]
-            == Path(
-        "output/cli_smoke"
-    )
-    )
-
-    assert (
-            state["output_zip"]
-            == Path(
-        "output/package.zip"
-    )
+        state["batch_dir"]
+        == Path(
+            "output/cli_smoke"
+        )
     )
 
     assert (
-            state["package_id"]
-            == "qwen-test"
+        state["output_zip"]
+        == Path(
+            "output/package.zip"
+        )
+    )
+
+    assert (
+        state["batch_id"]
+        == "qwen-test"
+    )
+
+    assert (
+        state["product_id"]
+        == "hongmao"
+    )
+
+    assert (
+        state["product_name"]
+        == "鸿茅药酒"
     )
 
 
@@ -135,7 +184,7 @@ def test_package_cli_main_verify(
 ) -> None:
     state = {}
 
-    def fake_verify_package_zip(
+    def fake_verify_central_package_zip(
             package_path,
     ) -> None:
         state[
@@ -144,8 +193,8 @@ def test_package_cli_main_verify(
 
     monkeypatch.setattr(
         cli,
-        "verify_package_zip",
-        fake_verify_package_zip,
+        "verify_central_package_zip",
+        fake_verify_central_package_zip,
     )
 
     monkeypatch.setattr(
@@ -161,8 +210,8 @@ def test_package_cli_main_verify(
     cli.main()
 
     assert (
-            state["package_path"]
-            == Path(
-        "output/package.zip"
-    )
+        state["package_path"]
+        == Path(
+            "output/package.zip"
+        )
     )

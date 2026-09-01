@@ -182,13 +182,13 @@ def test_run_package_phase_exports_and_verifies(
 
     monkeypatch.setattr(
         pipeline_runner_module,
-        "export_package_zip",
+        "export_central_package_zip",
         export_package,
     )
 
     monkeypatch.setattr(
         pipeline_runner_module,
-        "verify_package_zip",
+        "verify_central_package_zip",
         verify_package,
     )
 
@@ -204,13 +204,17 @@ def test_run_package_phase_exports_and_verifies(
     result = pipeline.run_package_phase(
         summary,
         package_path=package_path,
-        package_id="qwen-test",
+        batch_id="qwen-test",
+        product_id="hongmao",
+        product_name="????",
     )
 
     export_package.assert_called_once_with(
         batch_dir=tmp_path / "batch",
         output_zip=package_path,
-        package_id="qwen-test",
+        batch_id="qwen-test",
+        product_id="hongmao",
+        product_name="????",
     )
 
     verify_package.assert_called_once_with(
@@ -236,13 +240,13 @@ def test_run_package_phase_allows_partial_batch(
 
     monkeypatch.setattr(
         pipeline_runner_module,
-        "export_package_zip",
+        "export_central_package_zip",
         export_package,
     )
 
     monkeypatch.setattr(
         pipeline_runner_module,
-        "verify_package_zip",
+        "verify_central_package_zip",
         verify_package,
     )
 
@@ -259,7 +263,9 @@ def test_run_package_phase_allows_partial_batch(
     result = pipeline.run_package_phase(
         summary,
         package_path=package_path,
-        package_id="qwen-partial",
+        batch_id="qwen-partial",
+        product_id="hongmao",
+        product_name="????",
     )
 
     assert result == package_path
@@ -284,13 +290,13 @@ def test_run_package_phase_rejects_blocked_batch(
 
     monkeypatch.setattr(
         pipeline_runner_module,
-        "export_package_zip",
+        "export_central_package_zip",
         export_package,
     )
 
     monkeypatch.setattr(
         pipeline_runner_module,
-        "verify_package_zip",
+        "verify_central_package_zip",
         verify_package,
     )
 
@@ -309,7 +315,9 @@ def test_run_package_phase_rejects_blocked_batch(
             package_path=(
                     tmp_path / "blocked.zip"
             ),
-            package_id="qwen-blocked",
+            batch_id="qwen-blocked",
+            product_id="hongmao",
+            product_name="????",
         )
 
     export_package.assert_not_called()
@@ -360,7 +368,9 @@ def test_run_returns_completed_result(
     result = pipeline.run(
         tasks,
         package_path=package_path,
-        package_id="qwen-completed",
+        batch_id="qwen-completed",
+        product_id="hongmao",
+        product_name="????",
     )
 
     assert result.status == "completed"
@@ -381,7 +391,9 @@ def test_run_returns_completed_result(
     pipeline.run_package_phase.assert_called_once_with(
         summary,
         package_path=package_path,
-        package_id="qwen-completed",
+        batch_id="qwen-completed",
+        product_id="hongmao",
+        product_name="????",
     )
 
 
@@ -425,7 +437,9 @@ def test_run_returns_partial_result(
     result = pipeline.run(
         tasks,
         package_path=package_path,
-        package_id="qwen-partial",
+        batch_id="qwen-partial",
+        product_id="hongmao",
+        product_name="????",
     )
 
     assert result.status == "partial"
@@ -471,7 +485,9 @@ def test_run_returns_blocked_without_export(
         package_path=(
                 tmp_path / "blocked.zip"
         ),
-        package_id="qwen-blocked",
+        batch_id="qwen-blocked",
+        product_id="hongmao",
+        product_name="????",
     )
 
     assert result.status == "blocked"
@@ -523,7 +539,9 @@ def test_run_returns_failed_when_package_phase_fails(
         package_path=(
                 tmp_path / "failed.zip"
         ),
-        package_id="qwen-failed",
+        batch_id="qwen-failed",
+        product_id="hongmao",
+        product_name="????",
     )
 
     assert result.status == "failed"
@@ -749,7 +767,9 @@ def test_analysis_errors_make_pipeline_partial(
         package_path=(
                 tmp_path / "package.zip"
         ),
-        package_id="test",
+        batch_id="test",
+        product_id="hongmao",
+        product_name="????",
     )
 
     assert result.status == "partial"
@@ -838,7 +858,9 @@ def test_analysis_success_is_persisted(
         package_path=(
                 tmp_path / "package.zip"
         ),
-        package_id="test",
+        batch_id="test",
+        product_id="hongmao",
+        product_name="????",
     )
 
     assert result.status == "completed"
@@ -905,7 +927,9 @@ def test_analysis_failure_fails_pipeline(
         package_path=(
                 tmp_path / "package.zip"
         ),
-        package_id="test",
+        batch_id="test",
+        product_id="hongmao",
+        product_name="????",
     )
 
     assert result.status == "failed"
