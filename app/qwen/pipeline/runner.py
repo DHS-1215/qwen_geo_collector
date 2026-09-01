@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
@@ -130,7 +131,7 @@ class QwenPipelineRunner:
         )
 
     def run_analysis_phase(
-        self,
+            self,
     ) -> GeoAnalysisBundle:
         if not self.analysis_enabled:
             raise ValueError(
@@ -138,22 +139,35 @@ class QwenPipelineRunner:
             )
 
         assert (
-            self.analysis_targets
-            is not None
+                self.analysis_targets
+                is not None
         )
 
         assert (
-            self.sentiment_classifier
-            is not None
+                self.sentiment_classifier
+                is not None
         )
 
-        return asyncio.run(
-            run_geo_analysis(
-                self.batch_dir,
-                self.analysis_targets,
-                self.sentiment_classifier,
+        def run_in_worker() -> GeoAnalysisBundle:
+            return asyncio.run(
+                run_geo_analysis(
+                    self.batch_dir,
+                    self.analysis_targets,
+                    self.sentiment_classifier,
+                )
             )
-        )
+
+        with ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix=(
+                        "qwen-geo-analysis"
+                ),
+        ) as executor:
+            future = executor.submit(
+                run_in_worker
+            )
+
+            return future.result()
 
     @staticmethod
     def count_analysis_errors(

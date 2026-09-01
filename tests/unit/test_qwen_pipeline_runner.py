@@ -920,3 +920,91 @@ def test_analysis_failure_fails_pipeline(
     )
 
     pipeline.run_package_phase.assert_not_called()
+
+
+def test_run_analysis_phase_works_with_running_event_loop(
+        tmp_path: Path,
+        monkeypatch,
+) -> None:
+    import asyncio
+    import threading
+
+    from app.qwen.analysis.models import (
+        MentionTarget,
+    )
+
+    batch_runner = Mock()
+    batch_runner.output_dir = tmp_path
+
+    classifier = Mock()
+
+    targets = [
+        MentionTarget(
+            target_id="hongmao",
+            aliases=[
+                "鸿茅药酒",
+            ],
+        )
+    ]
+
+    expected = Mock()
+
+    main_thread_id = (
+        threading.get_ident()
+    )
+
+    worker_thread_ids = []
+
+    async def fake_geo_analysis(
+            batch_dir,
+            passed_targets,
+            passed_classifier,
+    ):
+        worker_thread_ids.append(
+            threading.get_ident()
+        )
+
+        assert batch_dir == tmp_path
+        assert passed_targets == targets
+        assert (
+                passed_classifier
+                is classifier
+        )
+
+        return expected
+
+    monkeypatch.setattr(
+        pipeline_runner_module,
+        "run_geo_analysis",
+        fake_geo_analysis,
+    )
+
+    pipeline = QwenPipelineRunner(
+        batch_runner=batch_runner,
+        analysis_targets=targets,
+        sentiment_classifier=(
+            classifier
+        ),
+    )
+
+    async def invoke():
+        # 当前线程此时已有运行中的
+        # asyncio event loop。
+        return (
+            pipeline.run_analysis_phase()
+        )
+
+    result = asyncio.run(
+        invoke()
+    )
+
+    assert result is expected
+
+    assert len(
+        worker_thread_ids
+    ) == 1
+
+    assert (
+            worker_thread_ids[0]
+            != main_thread_id
+    )
