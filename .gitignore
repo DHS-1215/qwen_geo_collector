@@ -12,3 +12,5 @@ output/*
 .idea/
 .vscode/
 .qwen_cdp_profile/
+
+.qwen_chrome_profile/
