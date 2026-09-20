@@ -240,9 +240,9 @@ class QwenPipelineRunner:
             summary
         ):
             raise ValueError(
-                "batch is blocked or still has "
-                "pending tasks; resume collection "
-                "before package export"
+                "batch is incomplete; "
+                "resume collection before "
+                "package export"
             )
 
         package_path = Path(
@@ -312,10 +312,13 @@ class QwenPipelineRunner:
                 )
             )
 
-            if post_batch_status == "blocked":
+            if post_batch_status in {
+                "blocked",
+                "partial",
+            }:
                 return self._finalize_result(
                     QwenPipelineResult(
-                        status="blocked",
+                        status=post_batch_status,
                         batch_dir=self.batch_dir,
                         package_path=None,
                         planned_count=(

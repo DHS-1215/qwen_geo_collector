@@ -76,7 +76,7 @@ def test_completed_batch_can_export() -> None:
     assert can_export_package(summary) is True
 
 
-def test_partial_batch_can_export() -> None:
+def test_partial_batch_cannot_export() -> None:
     summary = build_summary(
         pass_count=2,
         fail_count=1,
@@ -87,7 +87,7 @@ def test_partial_batch_can_export() -> None:
             == "partial"
     )
 
-    assert can_export_package(summary) is True
+    assert can_export_package(summary) is False
 
 
 def test_blocked_batch_cannot_export() -> None:

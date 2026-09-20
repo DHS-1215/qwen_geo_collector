@@ -180,7 +180,7 @@ rem ============================================================
 echo [1/4] Check Ollama
 
 powershell -NoProfile -Command ^
-"try { Invoke-RestMethod -Uri '%OLLAMA_URL%' -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }"
+"try { [void](Invoke-RestMethod -Uri '%OLLAMA_URL%' -TimeoutSec 2); exit 0 } catch { exit 1 }"
 
 if errorlevel 1 (
 
@@ -205,7 +205,7 @@ if errorlevel 1 (
     start "" /min "!OLLAMA_EXE!" serve
 
     powershell -NoProfile -Command ^
-    "$ok=$false; for($i=0;$i -lt 20;$i++){ try { Invoke-RestMethod -Uri '%OLLAMA_URL%' -TimeoutSec 2 | Out-Null; $ok=$true; break } catch { Start-Sleep -Seconds 1 } }; if($ok){exit 0}else{exit 1}"
+    "$ok=$false; for($i=0;$i -lt 20;$i++){ try { [void](Invoke-RestMethod -Uri '%OLLAMA_URL%' -TimeoutSec 2); $ok=$true; break } catch { Start-Sleep -Seconds 1 } }; if($ok){exit 0}else{exit 1}"
 
     if errorlevel 1 (
         echo [ERROR] Ollama API did not become ready.
@@ -214,7 +214,7 @@ if errorlevel 1 (
 )
 
 powershell -NoProfile -Command ^
-"$r=Invoke-RestMethod -Uri '%OLLAMA_URL%' -TimeoutSec 5; if(($r.models.name -join \"`n\") -match '^%OLLAMA_MODEL%(:|$)' -or ($r.models.model -join \"`n\") -match '^%OLLAMA_MODEL%(:|$)'){exit 0}else{exit 1}"
+"$r=Invoke-RestMethod -Uri '%OLLAMA_URL%' -TimeoutSec 5; $names=@($r.models.name)+@($r.models.model); if($names -contains '%OLLAMA_MODEL%'){exit 0}else{exit 1}"
 
 if errorlevel 1 (
     echo [ERROR] Ollama model not found: %OLLAMA_MODEL%
@@ -270,7 +270,7 @@ if errorlevel 1 (
         "https://www.qianwen.com/"
 
     powershell -NoProfile -Command ^
-    "$ok=$false; for($i=0;$i -lt 20;$i++){ try { Invoke-RestMethod -Uri '%CDP_URL%' -TimeoutSec 2 | Out-Null; $ok=$true; break } catch { Start-Sleep -Seconds 1 } }; if($ok){exit 0}else{exit 1}"
+    "$ok=$false; for($i=0;$i -lt 20;$i++){ try { [void](Invoke-RestMethod -Uri '%CDP_URL%' -TimeoutSec 2); $ok=$true; break } catch { Start-Sleep -Seconds 1 } }; if($ok){exit 0}else{exit 1}"
 
     if errorlevel 1 (
         echo [ERROR] Chrome CDP did not become ready.
@@ -292,6 +292,10 @@ rem Save state before collection starts
 rem ============================================================
 
 if "!IS_RESUME!"=="0" (
+
+    if not exist "!OUTPUT_DIR!" (
+        mkdir "!OUTPUT_DIR!"
+    )
 
     >"%STATE_FILE%" (
         echo RUN_TS=!RUN_TS!
@@ -338,7 +342,7 @@ if not "!PIPELINE_EXIT!"=="0" (
     if exist "!OUTPUT_DIR!\batch_summary.json" (
 
         powershell -NoProfile -Command ^
-        "$p='!OUTPUT_DIR!\batch_summary.json'; try { $s=Get-Content -Raw -Encoding UTF8 $p | ConvertFrom-Json; if($s.status -eq 'blocked'){exit 0}else{exit 1} } catch { exit 1 }"
+        "$p='!OUTPUT_DIR!\batch_summary.json'; try { $s=ConvertFrom-Json (Get-Content -Raw -Encoding UTF8 $p); if($s.status -eq 'blocked' -or $s.status -eq 'partial'){exit 0}else{exit 1} } catch { exit 1 }"
 
         if not errorlevel 1 (
             goto :PAUSED
@@ -424,10 +428,10 @@ rem ============================================================
 
 echo.
 echo ============================================================
-echo COLLECTION PAUSED
+echo COLLECTION INCOMPLETE
 echo ============================================================
 echo.
-echo The current batch is BLOCKED.
+echo The current batch is BLOCKED or PARTIAL.
 echo No final ZIP was generated.
 echo.
 echo Output directory:
@@ -446,7 +450,7 @@ echo   5. Run this BAT again.
 echo   6. Select [2] Resume last unfinished collection.
 echo.
 echo Previously PASS tasks will be skipped.
-echo The blocked task will be executed again.
+echo Failed or blocked tasks will be executed again.
 echo ============================================================
 echo.
 

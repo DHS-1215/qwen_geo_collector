@@ -224,7 +224,7 @@ def test_run_package_phase_exports_and_verifies(
     assert result == package_path
 
 
-def test_run_package_phase_allows_partial_batch(
+def test_run_package_phase_rejects_partial_batch(
         tmp_path: Path,
         monkeypatch,
 ) -> None:
@@ -260,18 +260,19 @@ def test_run_package_phase_allows_partial_batch(
             / "partial.zip"
     )
 
-    result = pipeline.run_package_phase(
-        summary,
-        package_path=package_path,
-        batch_id="qwen-partial",
-        product_id="hongmao",
-        product_name="????",
-    )
+    with pytest.raises(
+        ValueError
+    ):
+        pipeline.run_package_phase(
+            summary,
+            package_path=package_path,
+            batch_id="qwen-partial",
+            product_id="hongmao",
+            product_name="????",
+        )
 
-    assert result == package_path
-
-    export_package.assert_called_once()
-    verify_package.assert_called_once()
+    export_package.assert_not_called()
+    verify_package.assert_not_called()
 
 
 def test_run_package_phase_rejects_blocked_batch(
@@ -443,9 +444,14 @@ def test_run_returns_partial_result(
     )
 
     assert result.status == "partial"
-    assert result.package_verified is True
+    assert result.package_path is None
+    assert result.package_verified is False
+    assert result.analysis_status == "not_run"
+    assert result.analysis_verified is False
     assert result.pass_count == 2
     assert result.fail_count == 1
+
+    pipeline.run_package_phase.assert_not_called()
 
 
 def test_run_returns_blocked_without_export(
