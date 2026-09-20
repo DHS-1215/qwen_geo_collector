@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.qwen.exceptions import (
+    QwenQuotaExhaustedError,
     QwenRiskControlError,
     QwenRefusalError,
 )
@@ -25,6 +26,9 @@ from app.qwen.tasks import (
 )
 from app.qwen.refusal import (
     is_qwen_refusal,
+)
+from app.qwen.quota import (
+    is_qwen_quota_exhausted,
 )
 
 QUICK_TASK_GAP_MS = 5000
@@ -237,6 +241,22 @@ class QwenBatchRunner:
             ),
         )
 
+        if is_qwen_quota_exhausted(
+                result.answer
+        ):
+            print()
+            print(
+                "[QUOTA EXHAUSTED]",
+                task.question_id,
+                task.mode,
+            )
+
+            raise QwenQuotaExhaustedError(
+                "Qwen account quota exhausted: "
+                f"{task.question_id} "
+                f"{task.mode}"
+            )
+
         if not is_qwen_refusal(
                 result.answer
         ):
@@ -277,6 +297,22 @@ class QwenBatchRunner:
                     timeout_seconds
                 ),
             )
+
+            if is_qwen_quota_exhausted(
+                    result.answer
+            ):
+                print()
+                print(
+                    "[QUOTA EXHAUSTED]",
+                    task.question_id,
+                    task.mode,
+                )
+
+                raise QwenQuotaExhaustedError(
+                    "Qwen account quota exhausted: "
+                    f"{task.question_id} "
+                    f"{task.mode}"
+                )
 
             if not is_qwen_refusal(
                     result.answer
@@ -510,6 +546,8 @@ class QwenBatchRunner:
 
                     QwenRefusalError,
 
+                    QwenQuotaExhaustedError,
+
             ) as exc:
                 print()
 
@@ -528,6 +566,28 @@ class QwenBatchRunner:
                     "[ERROR]",
                     str(exc),
                 )
+
+                if isinstance(
+                        exc,
+                        QwenQuotaExhaustedError,
+                ):
+                    print()
+                    print(
+                        "[ACCOUNT SWITCH REQUIRED]"
+                    )
+                    print(
+                        "??????????????????"
+                    )
+                    print(
+                        "???????????????????"
+                    )
+                    print(
+                        "??????? --resume ???????"
+                    )
+                    print(
+                        "???????? PASS?"
+                        "?????????????"
+                    )
 
                 blocked_path = (
                     self._write_task_issue(
@@ -569,6 +629,13 @@ class QwenBatchRunner:
                 )
 
                 if isinstance(
+                        exc,
+                        QwenQuotaExhaustedError,
+                ):
+                    reason = (
+                        "account quota exhausted"
+                    )
+                elif isinstance(
                         exc,
                         QwenRefusalError,
                 ):

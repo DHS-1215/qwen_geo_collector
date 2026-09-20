@@ -24,3 +24,7 @@ class QwenTimeoutError(QwenCollectorError):
 
 class QwenModeError(QwenCollectorError):
     """千问模式识别或切换失败。"""
+
+
+class QwenQuotaExhaustedError(QwenCollectorError):
+    """Qwen account quota exhausted."""
