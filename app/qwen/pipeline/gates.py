@@ -46,5 +46,5 @@ def can_export_package(
 ) -> bool:
     return (
             resolve_post_batch_status(summary)
-            != "blocked"
+            == "completed"
     )

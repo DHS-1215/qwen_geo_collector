@@ -28,6 +28,7 @@ EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_BLOCKED = 2
 EXIT_CLI_ERROR = 3
+EXIT_PARTIAL = 4
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -404,6 +405,16 @@ def main() -> int:
             )
 
             return EXIT_BLOCKED
+
+        if result.status == "partial":
+            print(
+                "[PIPELINE PARTIAL] "
+                "Some tasks failed. "
+                "Resume collection before "
+                "final package export."
+            )
+
+            return EXIT_PARTIAL
 
         if result.status == "failed":
             print(

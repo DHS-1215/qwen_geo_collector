@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from app.qwen.answer_cleaning import (
+    clean_qwen_answer_text,
+)
+from app.qwen.package.site_utils import (
+    source_site_name_from_url,
+)
+
 import hashlib
 
 from app.qwen.models import (
@@ -281,8 +288,9 @@ def answer_result_to_geo_answer(
 
     raw_text = result.answer
 
-    clean_text = (
-        raw_text.strip()
+    clean_text = clean_qwen_answer_text(
+        raw_text,
+        mode=result.mode,
     )
 
     return GeoPackageAnswer(
@@ -384,7 +392,11 @@ def answer_result_to_geo_sources(
                 source_title_raw=(
                     source.title
                 ),
-                source_site_name_raw=None,
+                source_site_name_raw=(
+                    source_site_name_from_url(
+                        url
+                    )
+                ),
                 source_url_raw=url,
                 source_snippet=None,
                 is_duplicate_in_answer=(
