@@ -28,3 +28,7 @@ class QwenModeError(QwenCollectorError):
 
 class QwenQuotaExhaustedError(QwenCollectorError):
     """Qwen account quota exhausted."""
+
+
+class QwenServiceBusyError(QwenCollectorError):
+    """Qwen returned a temporary service-busy message."""

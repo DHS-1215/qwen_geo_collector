@@ -9,6 +9,7 @@ from app.qwen.exceptions import (
     QwenQuotaExhaustedError,
     QwenRiskControlError,
     QwenRefusalError,
+    QwenServiceBusyError,
 )
 from app.qwen.models import (
     QwenAnswerResult,
@@ -30,11 +31,16 @@ from app.qwen.refusal import (
 from app.qwen.quota import (
     is_qwen_quota_exhausted,
 )
+from app.qwen.service_busy import (
+    is_qwen_service_busy,
+)
 
 QUICK_TASK_GAP_MS = 5000
 RESEARCH_TASK_GAP_MS = 12000
 REFUSAL_RETRY_WAIT_SECONDS = 600
 REFUSAL_MAX_RETRIES = 1
+SERVICE_BUSY_RETRY_WAIT_SECONDS = 60
+SERVICE_BUSY_MAX_RETRIES = 1
 
 
 class QwenBatchRunner:
@@ -232,18 +238,25 @@ class QwenBatchRunner:
             *,
             timeout_seconds: int,
     ) -> QwenAnswerResult:
-        result = self.runner.ask(
-            task.question,
-            mode=task.mode,
-            new_chat=True,
-            answer_timeout_seconds=(
-                timeout_seconds
-            ),
-        )
 
-        if is_qwen_quota_exhausted(
-                result.answer
-        ):
+        def ask_once() -> QwenAnswerResult:
+            return self.runner.ask(
+                task.question,
+                mode=task.mode,
+                new_chat=True,
+                answer_timeout_seconds=(
+                    timeout_seconds
+                ),
+            )
+
+        def check_quota(
+                result: QwenAnswerResult,
+        ) -> None:
+            if not is_qwen_quota_exhausted(
+                    result.answer
+            ):
+                return
+
             print()
             print(
                 "[QUOTA EXHAUSTED]",
@@ -256,6 +269,69 @@ class QwenBatchRunner:
                 f"{task.question_id} "
                 f"{task.mode}"
             )
+
+        def recover_service_busy(
+                result: QwenAnswerResult,
+        ) -> QwenAnswerResult:
+            check_quota(result)
+
+            if not is_qwen_service_busy(
+                    result.answer
+            ):
+                return result
+
+            print()
+            print(
+                "[SERVICE BUSY DETECTED]",
+                task.question_id,
+                task.mode,
+            )
+
+            for retry_index in range(
+                    SERVICE_BUSY_MAX_RETRIES
+            ):
+                print(
+                    "[SERVICE BUSY WAIT]",
+                    SERVICE_BUSY_RETRY_WAIT_SECONDS,
+                    "seconds",
+                )
+
+                time.sleep(
+                    SERVICE_BUSY_RETRY_WAIT_SECONDS
+                )
+
+                print(
+                    "[SERVICE BUSY RETRY]",
+                    retry_index + 1,
+                    "/",
+                    SERVICE_BUSY_MAX_RETRIES,
+                )
+
+                candidate = ask_once()
+
+                check_quota(candidate)
+
+                if not is_qwen_service_busy(
+                        candidate.answer
+                ):
+                    print(
+                        "[SERVICE BUSY RECOVERED]",
+                        task.question_id,
+                        task.mode,
+                    )
+
+                    return candidate
+
+            raise QwenServiceBusyError(
+                "Qwen service busy persisted after "
+                f"{SERVICE_BUSY_MAX_RETRIES} retry: "
+                f"{task.question_id} "
+                f"{task.mode}"
+            )
+
+        result = recover_service_busy(
+            ask_once()
+        )
 
         if not is_qwen_refusal(
                 result.answer
@@ -289,30 +365,9 @@ class QwenBatchRunner:
                 REFUSAL_MAX_RETRIES,
             )
 
-            result = self.runner.ask(
-                task.question,
-                mode=task.mode,
-                new_chat=True,
-                answer_timeout_seconds=(
-                    timeout_seconds
-                ),
+            result = recover_service_busy(
+                ask_once()
             )
-
-            if is_qwen_quota_exhausted(
-                    result.answer
-            ):
-                print()
-                print(
-                    "[QUOTA EXHAUSTED]",
-                    task.question_id,
-                    task.mode,
-                )
-
-                raise QwenQuotaExhaustedError(
-                    "Qwen account quota exhausted: "
-                    f"{task.question_id} "
-                    f"{task.mode}"
-                )
 
             if not is_qwen_refusal(
                     result.answer
