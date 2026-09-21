@@ -19,7 +19,7 @@ set "TARGET_ALIAS_1=鸿茅药酒"
 set "TARGET_ALIAS_2=鸿茅"
 
 set "OLLAMA_MODEL=qwen2.5:7b"
-set "GEO_ROOT=D:\geo_analysis_system"
+set "GEO_ROOT=%~dp0..\geo_analysis_system"
 
 
 rem ============================================================
@@ -369,18 +369,16 @@ rem ============================================================
 rem 4/4 Validate final ZIP
 rem ============================================================
 
-echo [4/4] Validate ZIP with GEO Analysis System
+echo [4/4] Optional GEO Analysis System validation
 
 if not exist "%GEO_PYTHON%" (
-    echo [ERROR] GEO virtualenv python not found:
-    echo %GEO_PYTHON%
-    goto :FAIL
+    echo [SKIP] GEO Analysis System is not installed.
+    goto :CENTRAL_VALIDATION_DONE
 )
 
 if not exist "%CENTRAL_IMPORTER%" (
-    echo [ERROR] GEO central importer not found:
-    echo %CENTRAL_IMPORTER%
-    goto :FAIL
+    echo [SKIP] GEO central importer is not installed.
+    goto :CENTRAL_VALIDATION_DONE
 )
 
 "%GEO_PYTHON%" ^
@@ -393,6 +391,10 @@ if errorlevel 1 (
     echo [ERROR] GEO central validation failed.
     goto :FAIL
 )
+
+echo [PASS] GEO central validation completed
+
+:CENTRAL_VALIDATION_DONE
 
 
 rem ============================================================

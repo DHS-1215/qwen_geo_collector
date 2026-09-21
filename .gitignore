@@ -14,3 +14,7 @@ output/*
 .qwen_cdp_profile/
 
 .qwen_chrome_profile/
+
+# Server deployment artifacts
+dist/
+hotfix_sync_*.zip
