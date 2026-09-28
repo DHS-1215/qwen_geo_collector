@@ -270,6 +270,9 @@ from app.qwen.package.central_models import (
     GeoPackageSource,
     GeoPackageTask,
 )
+from app.qwen.package.screenshot_refs import (
+    validate_central_screenshot_ref,
+)
 
 
 CENTRAL_FORBIDDEN_ANALYSIS_FIELDS = {
@@ -305,26 +308,23 @@ def verify_central_package_zip(
         package_path,
         "r",
     ) as zip_file:
-        names = set(
-            zip_file.namelist()
-        )
+        file_names = [
+            info.filename for info in zip_file.infolist() if not info.is_dir()
+        ]
+        names = set(file_names)
+        if len(names) != len(file_names):
+            raise ValueError("duplicate ZIP file entry")
 
-        if names != REQUIRED_FILES:
-            missing = (
-                REQUIRED_FILES
-                - names
-            )
-
-            extra = (
-                names
-                - REQUIRED_FILES
-            )
-
+        missing = REQUIRED_FILES - names
+        if missing:
             raise ValueError(
                 "invalid package files; "
-                f"missing={sorted(missing)}, "
-                f"extra={sorted(extra)}"
+                f"missing={sorted(missing)}"
             )
+
+        screenshot_files = names - REQUIRED_FILES
+        for name in screenshot_files:
+            validate_central_screenshot_ref(name)
 
         try:
             manifest_data = json.loads(
@@ -405,6 +405,7 @@ def verify_central_package_zip(
             "tasks.jsonl",
             "answers.jsonl",
             "sources.jsonl",
+            *screenshot_files,
         }
 
         checksum_files = (
@@ -503,6 +504,24 @@ def verify_central_package_zip(
                 "invalid central package "
                 "JSONL schema"
             ) from exc
+
+        screenshot_refs: set[str] = set()
+        for answer in answers:
+            ref = answer.screenshot_path
+            if manifest.capabilities.supports_screenshot:
+                ref = validate_central_screenshot_ref(ref)
+                if ref in screenshot_refs:
+                    raise ValueError(f"duplicate screenshot reference: {ref}")
+                screenshot_refs.add(ref)
+            elif ref:
+                raise ValueError("screenshot reference without screenshot capability")
+
+        if screenshot_refs != screenshot_files:
+            raise ValueError(
+                "screenshot files mismatch; "
+                f"missing={sorted(screenshot_refs - screenshot_files)}, "
+                f"orphan={sorted(screenshot_files - screenshot_refs)}"
+            )
 
         if (
             len(tasks)

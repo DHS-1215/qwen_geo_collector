@@ -166,6 +166,11 @@ def test_answer_maps_to_central_record():
         ],
         citation_mapping_available=False,
         acquired_at=acquired_at,
+        screenshot_path="screenshots/Q001_research.png",
+        screenshot_sha256="a" * 64,
+        screenshot_size_bytes=1234,
+        screenshot_width=640,
+        screenshot_height=480,
     )
 
     answer = answer_result_to_geo_answer(
@@ -238,6 +243,12 @@ def test_answer_maps_to_central_record():
         ]
         == "turn-001"
     )
+
+    assert answer.screenshot_path == "screenshots/Q001_research.png"
+    assert answer.platform_meta_json["screenshot_sha256"] == "a" * 64
+    assert answer.platform_meta_json["screenshot_size_bytes"] == 1234
+    assert answer.platform_meta_json["screenshot_width"] == 640
+    assert answer.platform_meta_json["screenshot_height"] == 480
 
 
 def test_sources_reference_answer_and_mark_duplicates():
