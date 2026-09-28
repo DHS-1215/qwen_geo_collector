@@ -314,7 +314,7 @@ def answer_result_to_geo_answer(
         source_count_raw=len(
             result.sources
         ),
-        screenshot_path=None,
+        screenshot_path=result.screenshot_path,
         collected_at=result.acquired_at,
         platform_meta_json={
             "original_mode":
@@ -331,6 +331,14 @@ def answer_result_to_geo_answer(
                 ),
             "citation_mapping_available":
                 result.citation_mapping_available,
+            "screenshot_sha256":
+                result.screenshot_sha256,
+            "screenshot_size_bytes":
+                result.screenshot_size_bytes,
+            "screenshot_width":
+                result.screenshot_width,
+            "screenshot_height":
+                result.screenshot_height,
         },
     )
 

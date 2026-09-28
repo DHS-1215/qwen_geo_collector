@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import shutil
 import tempfile
 import zipfile
 
@@ -174,7 +176,11 @@ from app.qwen.package.assembly import (
     assemble_central_package_records,
 )
 from app.qwen.package.central_models import (
+    GeoPackageCapabilities,
     GeoPackageManifest,
+)
+from app.qwen.package.screenshot_refs import (
+    validate_central_screenshot_ref,
 )
 
 
@@ -214,6 +220,30 @@ def export_central_package_directory(
         )
     )
 
+    screenshot_refs = []
+    for answer in records.answers:
+        if not answer.screenshot_path:
+            continue
+        ref = validate_central_screenshot_ref(answer.screenshot_path)
+        if ref in screenshot_refs:
+            raise ValueError(f"duplicate screenshot reference: {ref}")
+        screenshot_refs.append(ref)
+
+    if screenshot_refs and len(screenshot_refs) != len(records.answers):
+        raise ValueError("partial screenshot coverage is not supported")
+
+    for ref in screenshot_refs:
+        source = batch_dir / ref
+        if not source.exists():
+            raise FileNotFoundError(f"screenshot file not found: {source}")
+        if not source.is_file():
+            raise ValueError(f"screenshot path is not a file: {source}")
+
+    for ref in screenshot_refs:
+        destination = output_dir / ref
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(batch_dir / ref, destination)
+
     write_jsonl(
         records.tasks,
         output_dir
@@ -233,6 +263,9 @@ def export_central_package_directory(
     )
 
     manifest = GeoPackageManifest(
+        capabilities=GeoPackageCapabilities(
+            supports_screenshot=bool(screenshot_refs),
+        ),
         product_id=product_id,
         product_name=product_name,
         batch_id=batch_id,
@@ -259,7 +292,7 @@ def export_central_package_directory(
 
     write_checksums(
         output_dir,
-        CHECKSUM_TARGET_FILES,
+        [*CHECKSUM_TARGET_FILES, *screenshot_refs],
     )
 
     return output_dir
@@ -302,6 +335,16 @@ def export_central_package_zip(
             ),
         )
 
+        package_files = list(PACKAGE_FILES)
+        for line in (package_dir / "answers.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines():
+            answer = json.loads(line)
+            if answer.get("screenshot_path"):
+                package_files.append(
+                    validate_central_screenshot_ref(answer["screenshot_path"])
+                )
+
         with zipfile.ZipFile(
             output_zip,
             mode="w",
@@ -309,7 +352,7 @@ def export_central_package_zip(
                 zipfile.ZIP_DEFLATED
             ),
         ) as zip_file:
-            for file_name in PACKAGE_FILES:
+            for file_name in package_files:
                 file_path = (
                     package_dir
                     / file_name

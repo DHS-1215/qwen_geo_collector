@@ -38,6 +38,13 @@ class QwenAnswerResult(BaseModel):
         default_factory=list
     )
 
+    screenshot_path: str | None = None
+    screenshot_sha256: str | None = None
+    screenshot_size_bytes: int | None = None
+    screenshot_width: int | None = None
+    screenshot_height: int | None = None
+
+
     # 当前千问 Web 最终正文没有暴露
     # sentence-level citation -> source 映射
     citation_mapping_available: bool = False

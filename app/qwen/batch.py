@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import time
@@ -21,6 +21,10 @@ from app.qwen.runner import (
 )
 from app.qwen.serialization import (
     write_result_json,
+)
+from app.qwen.screenshot import (
+    capture_qwen_screenshot,
+    validate_qwen_screenshot,
 )
 from app.qwen.tasks import (
     QwenTask,
@@ -80,6 +84,23 @@ class QwenBatchRunner:
         return (
                 self.output_dir
                 / filename
+        )
+
+    def _build_screenshot_path(
+            self,
+            task: QwenTask,
+    ) -> tuple[Path, str]:
+        relative_path = (
+            Path("screenshots")
+            / (
+                f"{task.question_id}_"
+                f"{task.mode}.png"
+            )
+        )
+
+        return (
+            self.output_dir / relative_path,
+            relative_path.as_posix(),
         )
 
     def _write_task_issue(
@@ -176,61 +197,6 @@ class QwenBatchRunner:
         )
 
         return path
-
-    def _load_passed_task_keys(
-            self,
-    ) -> set[tuple[str, str]]:
-        summary_path = (
-                self.output_dir
-                / "batch_summary.json"
-        )
-
-        if not summary_path.exists():
-            return set()
-
-        try:
-            data = json.loads(
-                summary_path.read_text(
-                    encoding="utf-8"
-                )
-            )
-
-        except Exception:
-            return set()
-
-        passed: set[
-            tuple[str, str]
-        ] = set()
-
-        for item in data.get(
-                "task_results",
-                []
-        ):
-            if item.get(
-                    "status"
-            ) != "pass":
-                continue
-
-            question_id = item.get(
-                "question_id"
-            )
-
-            mode = item.get(
-                "mode"
-            )
-
-            if (
-                    question_id
-                    and mode
-            ):
-                passed.add(
-                    (
-                        question_id,
-                        mode,
-                    )
-                )
-
-        return passed
 
     def _ask_with_refusal_retry(
             self,
@@ -423,6 +389,41 @@ class QwenBatchRunner:
         # question_id 由 Batch 层补充。
         result.question_id = (
             task.question_id
+        )
+
+        (
+            screenshot_output_path,
+            screenshot_relative_path,
+        ) = self._build_screenshot_path(
+            task
+        )
+
+        screenshot = (
+            capture_qwen_screenshot(
+                self.runner.page,
+                screenshot_output_path,
+            )
+        )
+
+        result.screenshot_path = (
+            screenshot_relative_path
+        )
+        result.screenshot_sha256 = (
+            screenshot.sha256
+        )
+        result.screenshot_size_bytes = (
+            screenshot.size_bytes
+        )
+        result.screenshot_width = (
+            screenshot.width
+        )
+        result.screenshot_height = (
+            screenshot.height
+        )
+
+        print(
+            "[SCREENSHOT]",
+            screenshot_relative_path,
         )
 
         output_path = (
@@ -964,6 +965,9 @@ class QwenBatchRunner:
                 "task_results",
                 []
         ):
+            if not isinstance(item, dict):
+                continue
+
             if item.get("status") != "pass":
                 continue
 
@@ -975,13 +979,196 @@ class QwenBatchRunner:
                 "mode"
             )
 
-            if question_id and mode:
-                passed.add(
-                    (
-                        question_id,
-                        mode,
+            if not (
+                    isinstance(question_id, str)
+                    and question_id
+                    and isinstance(mode, str)
+                    and mode
+            ):
+                continue
+
+            answer_path = (
+                self.output_dir
+                / f"{question_id}_{mode}.json"
+            )
+
+            try:
+                answer_text = answer_path.read_text(
+                    encoding="utf-8"
+                )
+            except FileNotFoundError:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "formal answer file missing:",
+                    answer_path.name,
+                )
+                continue
+            except (OSError, UnicodeError) as exc:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "formal answer file unreadable:",
+                    answer_path.name,
+                    str(exc),
+                )
+                continue
+
+            try:
+                answer_data = json.loads(answer_text)
+            except (json.JSONDecodeError, ValueError) as exc:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "formal answer JSON invalid:",
+                    answer_path.name,
+                    str(exc),
+                )
+                continue
+
+            if not isinstance(answer_data, dict):
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "formal answer JSON must be an object:",
+                    answer_path.name,
+                )
+                continue
+
+            if answer_data.get("question_id") != question_id:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "question_id mismatch in:",
+                    answer_path.name,
+                )
+                continue
+
+            if answer_data.get("mode") != mode:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "mode mismatch in:",
+                    answer_path.name,
+                )
+                continue
+
+            expected_screenshot_ref = (
+                f"screenshots/"
+                f"{question_id}_{mode}.png"
+            )
+
+            screenshot_ref = (
+                answer_data.get(
+                    "screenshot_path"
+                )
+            )
+
+            if (
+                    screenshot_ref
+                    != expected_screenshot_ref
+            ):
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "screenshot_path invalid:",
+                    screenshot_ref,
+                )
+                continue
+
+            screenshot_path = (
+                self.output_dir
+                / Path(screenshot_ref)
+            )
+
+            try:
+                screenshot = (
+                    validate_qwen_screenshot(
+                        screenshot_path
                     )
                 )
+            except (
+                    OSError,
+                    ValueError,
+            ) as exc:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "screenshot invalid:",
+                    screenshot_ref,
+                    str(exc),
+                )
+                continue
+
+            screenshot_checks = [
+                (
+                    "screenshot_sha256",
+                    screenshot.sha256,
+                ),
+                (
+                    "screenshot_size_bytes",
+                    screenshot.size_bytes,
+                ),
+                (
+                    "screenshot_width",
+                    screenshot.width,
+                ),
+                (
+                    "screenshot_height",
+                    screenshot.height,
+                ),
+            ]
+
+            screenshot_metadata_valid = True
+
+            for (
+                    field_name,
+                    actual_value,
+            ) in screenshot_checks:
+                stored_value = (
+                    answer_data.get(
+                        field_name
+                    )
+                )
+
+                if (
+                        stored_value
+                        == actual_value
+                ):
+                    continue
+
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    field_name,
+                    "mismatch:",
+                    "stored=",
+                    stored_value,
+                    "actual=",
+                    actual_value,
+                )
+
+                screenshot_metadata_valid = False
+                break
+
+            if not screenshot_metadata_valid:
+                continue
+
+            passed.add(
+                (
+                    question_id,
+                    mode,
+                )
+            )
 
         return passed
 

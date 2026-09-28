@@ -176,10 +176,20 @@ class QwenRunner:
     ) -> None:
         self.ensure_no_risk_control()
 
+        if (
+                self._first_visible(
+                    self.page.locator(INPUT_SELECTOR)
+                ) is not None
+                and self.page.locator(QUESTION_WRAP_SELECTOR).count() == 0
+                and self.page.locator(ANSWER_WRAP_SELECTOR).count() == 0
+        ):
+            print("[NEW CHAT] already ready")
+            return
+
         old_url = self.page.url
 
         locator = self.page.get_by_text(
-            "新建对话",
+            "新对话",
             exact=True,
         )
 
@@ -188,8 +198,16 @@ class QwenRunner:
         )
 
         if button is None:
+            button = self._first_visible(
+                self.page.get_by_text(
+                    "新建对话",
+                    exact=True,
+                )
+            )
+
+        if button is None:
             raise QwenElementNotFoundError(
-                "没有找到“新建对话”按钮"
+                "没有找到“新对话”入口"
             )
 
         print(
@@ -285,6 +303,9 @@ class QwenRunner:
             if (
                     questions == 0
                     and answers == 0
+                    and self._first_visible(
+                        self.page.locator(INPUT_SELECTOR)
+                    ) is not None
             ):
                 print(
                     "[NEW CHAT] ready"

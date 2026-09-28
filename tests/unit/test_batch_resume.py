@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from app.qwen.batch import (
     QwenBatchRunner,
 )
@@ -11,6 +13,9 @@ from app.qwen.exceptions import (
 )
 from app.qwen.models import (
     QwenAnswerResult,
+)
+from app.qwen.screenshot import (
+    validate_qwen_screenshot,
 )
 from app.qwen.tasks import (
     QwenTask,
@@ -23,6 +28,25 @@ class FakePage:
         milliseconds: int,
     ) -> None:
         pass
+
+    def screenshot(
+        self,
+        *,
+        path: str,
+        full_page: bool,
+    ) -> bytes:
+        payload = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082")
+
+        Path(path).parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        Path(path).write_bytes(
+            payload
+        )
+
+        return payload
 
 
 class FakeRunner:
@@ -75,6 +99,113 @@ class FakeRunner:
                 else "思考研究"
             ),
         )
+
+
+@pytest.mark.parametrize(
+    ("answer_kind", "should_skip"),
+    [
+        ("valid", True),
+        ("missing", False),
+        ("corrupt", False),
+        ("question_id_mismatch", False),
+        ("mode_mismatch", False),
+    ],
+)
+def test_resume_validates_passed_answer_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    answer_kind: str,
+    should_skip: bool,
+) -> None:
+    runner = FakeRunner()
+    batch = QwenBatchRunner(
+        runner=runner,
+        output_dir=tmp_path,
+    )
+    task = QwenTask(
+        question_id="Q100",
+        question="断点续跑校验",
+        mode="quick",
+    )
+
+    (tmp_path / "batch_summary.json").write_text(
+        json.dumps(
+            {
+                "task_results": [
+                    {
+                        "question_id": task.question_id,
+                        "mode": task.mode,
+                        "question": task.question,
+                        "status": "pass",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    answer_path = tmp_path / "Q100_quick.json"
+    if answer_kind == "corrupt":
+        answer_path.write_text("{invalid json", encoding="utf-8")
+    elif answer_kind != "missing":
+        screenshot_path = (
+            tmp_path
+            / "screenshots"
+            / "Q100_quick.png"
+        )
+
+        runner.page.screenshot(
+            path=str(screenshot_path),
+            full_page=True,
+        )
+
+        screenshot = (
+            validate_qwen_screenshot(
+                screenshot_path
+            )
+        )
+
+        answer_data = {
+            "question_id": task.question_id,
+            "mode": task.mode,
+            "answer": "??????",
+            "screenshot_path": (
+                "screenshots/Q100_quick.png"
+            ),
+            "screenshot_sha256": (
+                screenshot.sha256
+            ),
+            "screenshot_size_bytes": (
+                screenshot.size_bytes
+            ),
+            "screenshot_width": (
+                screenshot.width
+            ),
+            "screenshot_height": (
+                screenshot.height
+            ),
+        }
+        if answer_kind == "question_id_mismatch":
+            answer_data["question_id"] = "Q999"
+        elif answer_kind == "mode_mismatch":
+            answer_data["mode"] = "research"
+        answer_path.write_text(
+            json.dumps(answer_data),
+            encoding="utf-8",
+        )
+
+    results = batch.run([task], resume=True)
+
+    assert len(results) == 1
+    assert results[0].status == "pass"
+    assert runner.calls == ([] if should_skip else [task.question])
+    assert answer_path.exists()
+
+    output = capsys.readouterr().out
+    if should_skip:
+        assert "[TASK SKIP]" in output
+    else:
+        assert "[RESUME INVALID PASS]" in output
 
 
 def test_batch_resume_after_risk_control(

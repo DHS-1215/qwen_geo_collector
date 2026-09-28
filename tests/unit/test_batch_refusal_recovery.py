@@ -29,6 +29,25 @@ class FakePage:
     ) -> None:
         pass
 
+    def screenshot(
+        self,
+        *,
+        path: str,
+        full_page: bool,
+    ) -> bytes:
+        payload = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082")
+
+        Path(path).parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        Path(path).write_bytes(
+            payload
+        )
+
+        return payload
+
 
 class FakeRunner:
     def __init__(

@@ -1,11 +1,17 @@
 ﻿from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from app.qwen.package.exporter import (
+    CHECKSUM_TARGET_FILES,
+    PACKAGE_FILES,
     export_central_package_directory,
 )
+from app.qwen.package.screenshot_refs import validate_central_screenshot_ref
 
 
 def write_json(
@@ -225,3 +231,110 @@ def test_export_central_package_directory(
         source["source_url_raw"]
         == "https://example.com/1"
     )
+
+
+def test_central_directory_exports_only_referenced_screenshots(
+    tmp_path: Path, central_batch_factory,
+) -> None:
+    batch_dir = central_batch_factory()
+    ref = "screenshots/Q001_quick.png"
+    (batch_dir / "screenshots/orphan.png").write_bytes(b"unreferenced")
+    (batch_dir / "unrelated.txt").write_text("unrelated", encoding="utf-8")
+    package_dir = export_central_package_directory(
+        batch_dir=batch_dir,
+        output_dir=tmp_path / "package",
+        batch_id="central-test",
+        product_id="product",
+        product_name="测试产品",
+    )
+    manifest = json.loads((package_dir / "manifest.json").read_text("utf-8"))
+    answers = [json.loads(line) for line in
+               (package_dir / "answers.jsonl").read_text("utf-8").splitlines()]
+    checksums = json.loads((package_dir / "checksums.json").read_text("utf-8"))
+
+    assert manifest["capabilities"]["supports_screenshot"] is True
+    assert manifest["files"] == PACKAGE_FILES
+    assert answers[0]["screenshot_path"] == ref
+    assert (package_dir / ref).read_bytes() == (batch_dir / ref).read_bytes()
+    assert set(checksums) == {*CHECKSUM_TARGET_FILES, ref}
+    assert checksums[ref] == hashlib.sha256((package_dir / ref).read_bytes()).hexdigest()
+    assert {path.relative_to(package_dir).as_posix()
+            for path in package_dir.rglob("*") if path.is_file()} == {*PACKAGE_FILES, ref}
+
+
+@pytest.mark.parametrize("refs", [(), (None,), ("",)])
+def test_central_directory_without_screenshots(
+    tmp_path: Path, central_batch_factory, refs,
+) -> None:
+    package_dir = export_central_package_directory(
+        batch_dir=central_batch_factory(refs),
+        output_dir=tmp_path / "package",
+        batch_id="central-test",
+        product_id="product",
+        product_name="测试产品",
+    )
+    manifest = json.loads((package_dir / "manifest.json").read_text("utf-8"))
+    checksums = json.loads((package_dir / "checksums.json").read_text("utf-8"))
+    assert manifest["capabilities"]["supports_screenshot"] is False
+    assert not (package_dir / "screenshots").exists()
+    assert set(checksums) == set(CHECKSUM_TARGET_FILES)
+
+
+@pytest.mark.parametrize(
+    ("refs", "reason"),
+    [
+        (("screenshots/Q001_quick.png", None), "partial screenshot coverage"),
+        (("screenshots/Q001_quick.png", "screenshots/Q001_quick.png"),
+         "duplicate screenshot reference"),
+        (("../evil.png",), "invalid central screenshot reference"),
+    ],
+)
+def test_central_directory_rejects_invalid_screenshot_coverage(
+    tmp_path: Path, central_batch_factory, refs, reason: str,
+) -> None:
+    with pytest.raises(ValueError, match=reason):
+        export_central_package_directory(
+            batch_dir=central_batch_factory(refs),
+            output_dir=tmp_path / "package",
+            batch_id="central-test",
+            product_id="product",
+            product_name="测试产品",
+        )
+
+
+@pytest.mark.parametrize("is_directory", [False, True])
+def test_central_directory_rejects_missing_or_nonfile_screenshot(
+    tmp_path: Path, central_batch_factory, is_directory: bool,
+) -> None:
+    batch_dir = central_batch_factory()
+    screenshot = batch_dir / "screenshots/Q001_quick.png"
+    screenshot.unlink()
+    if is_directory:
+        screenshot.mkdir()
+    with pytest.raises(ValueError if is_directory else FileNotFoundError):
+        export_central_package_directory(
+            batch_dir=batch_dir,
+            output_dir=tmp_path / "package",
+            batch_id="central-test",
+            product_id="product",
+            product_name="测试产品",
+        )
+
+
+@pytest.mark.parametrize("ref", [
+    None, 123, "", "../a.png", "screenshots/../a.png", r"C:\a.png",
+    "/screenshots/a.png", "screenshots/a/b.png", "screenshots/./a.png",
+    r"screenshots\a.png", "screenshots/..", "screenshots/.", "screenshots/",
+    "screenshots/.png", "screenshots/a.jpg", "screenshots/a.PNG",
+    "other/a.png", "screenshots/C:a.png", "screenshots/a\x00.png",
+])
+def test_central_screenshot_ref_rejects_unsafe_paths(ref) -> None:
+    with pytest.raises(ValueError):
+        validate_central_screenshot_ref(ref)
+
+
+@pytest.mark.parametrize("ref", [
+    "screenshots/Q001_quick.png", "screenshots/Q001_research.png",
+])
+def test_central_screenshot_ref_accepts_png_filename(ref: str) -> None:
+    assert validate_central_screenshot_ref(ref) == ref
