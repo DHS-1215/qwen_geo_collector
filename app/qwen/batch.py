@@ -177,61 +177,6 @@ class QwenBatchRunner:
 
         return path
 
-    def _load_passed_task_keys(
-            self,
-    ) -> set[tuple[str, str]]:
-        summary_path = (
-                self.output_dir
-                / "batch_summary.json"
-        )
-
-        if not summary_path.exists():
-            return set()
-
-        try:
-            data = json.loads(
-                summary_path.read_text(
-                    encoding="utf-8"
-                )
-            )
-
-        except Exception:
-            return set()
-
-        passed: set[
-            tuple[str, str]
-        ] = set()
-
-        for item in data.get(
-                "task_results",
-                []
-        ):
-            if item.get(
-                    "status"
-            ) != "pass":
-                continue
-
-            question_id = item.get(
-                "question_id"
-            )
-
-            mode = item.get(
-                "mode"
-            )
-
-            if (
-                    question_id
-                    and mode
-            ):
-                passed.add(
-                    (
-                        question_id,
-                        mode,
-                    )
-                )
-
-        return passed
-
     def _ask_with_refusal_retry(
             self,
             task: QwenTask,
@@ -964,6 +909,9 @@ class QwenBatchRunner:
                 "task_results",
                 []
         ):
+            if not isinstance(item, dict):
+                continue
+
             if item.get("status") != "pass":
                 continue
 
@@ -975,13 +923,92 @@ class QwenBatchRunner:
                 "mode"
             )
 
-            if question_id and mode:
-                passed.add(
-                    (
-                        question_id,
-                        mode,
-                    )
+            if not (
+                    isinstance(question_id, str)
+                    and question_id
+                    and isinstance(mode, str)
+                    and mode
+            ):
+                continue
+
+            answer_path = (
+                self.output_dir
+                / f"{question_id}_{mode}.json"
+            )
+
+            try:
+                answer_text = answer_path.read_text(
+                    encoding="utf-8"
                 )
+            except FileNotFoundError:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "formal answer file missing:",
+                    answer_path.name,
+                )
+                continue
+            except (OSError, UnicodeError) as exc:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "formal answer file unreadable:",
+                    answer_path.name,
+                    str(exc),
+                )
+                continue
+
+            try:
+                answer_data = json.loads(answer_text)
+            except (json.JSONDecodeError, ValueError) as exc:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "formal answer JSON invalid:",
+                    answer_path.name,
+                    str(exc),
+                )
+                continue
+
+            if not isinstance(answer_data, dict):
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "formal answer JSON must be an object:",
+                    answer_path.name,
+                )
+                continue
+
+            if answer_data.get("question_id") != question_id:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "question_id mismatch in:",
+                    answer_path.name,
+                )
+                continue
+
+            if answer_data.get("mode") != mode:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "mode mismatch in:",
+                    answer_path.name,
+                )
+                continue
+
+            passed.add(
+                (
+                    question_id,
+                    mode,
+                )
+            )
 
         return passed
 
