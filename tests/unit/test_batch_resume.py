@@ -14,6 +14,9 @@ from app.qwen.exceptions import (
 from app.qwen.models import (
     QwenAnswerResult,
 )
+from app.qwen.screenshot import (
+    validate_qwen_screenshot,
+)
 from app.qwen.tasks import (
     QwenTask,
 )
@@ -145,10 +148,42 @@ def test_resume_validates_passed_answer_file(
     if answer_kind == "corrupt":
         answer_path.write_text("{invalid json", encoding="utf-8")
     elif answer_kind != "missing":
+        screenshot_path = (
+            tmp_path
+            / "screenshots"
+            / "Q100_quick.png"
+        )
+
+        runner.page.screenshot(
+            path=str(screenshot_path),
+            full_page=True,
+        )
+
+        screenshot = (
+            validate_qwen_screenshot(
+                screenshot_path
+            )
+        )
+
         answer_data = {
             "question_id": task.question_id,
             "mode": task.mode,
-            "answer": "已有正式回答",
+            "answer": "??????",
+            "screenshot_path": (
+                "screenshots/Q100_quick.png"
+            ),
+            "screenshot_sha256": (
+                screenshot.sha256
+            ),
+            "screenshot_size_bytes": (
+                screenshot.size_bytes
+            ),
+            "screenshot_width": (
+                screenshot.width
+            ),
+            "screenshot_height": (
+                screenshot.height
+            ),
         }
         if answer_kind == "question_id_mismatch":
             answer_data["question_id"] = "Q999"

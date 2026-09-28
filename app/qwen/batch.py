@@ -24,6 +24,7 @@ from app.qwen.serialization import (
 )
 from app.qwen.screenshot import (
     capture_qwen_screenshot,
+    validate_qwen_screenshot,
 )
 from app.qwen.tasks import (
     QwenTask,
@@ -1056,6 +1057,110 @@ class QwenBatchRunner:
                     "mode mismatch in:",
                     answer_path.name,
                 )
+                continue
+
+            expected_screenshot_ref = (
+                f"screenshots/"
+                f"{question_id}_{mode}.png"
+            )
+
+            screenshot_ref = (
+                answer_data.get(
+                    "screenshot_path"
+                )
+            )
+
+            if (
+                    screenshot_ref
+                    != expected_screenshot_ref
+            ):
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "screenshot_path invalid:",
+                    screenshot_ref,
+                )
+                continue
+
+            screenshot_path = (
+                self.output_dir
+                / Path(screenshot_ref)
+            )
+
+            try:
+                screenshot = (
+                    validate_qwen_screenshot(
+                        screenshot_path
+                    )
+                )
+            except (
+                    OSError,
+                    ValueError,
+            ) as exc:
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    "screenshot invalid:",
+                    screenshot_ref,
+                    str(exc),
+                )
+                continue
+
+            screenshot_checks = [
+                (
+                    "screenshot_sha256",
+                    screenshot.sha256,
+                ),
+                (
+                    "screenshot_size_bytes",
+                    screenshot.size_bytes,
+                ),
+                (
+                    "screenshot_width",
+                    screenshot.width,
+                ),
+                (
+                    "screenshot_height",
+                    screenshot.height,
+                ),
+            ]
+
+            screenshot_metadata_valid = True
+
+            for (
+                    field_name,
+                    actual_value,
+            ) in screenshot_checks:
+                stored_value = (
+                    answer_data.get(
+                        field_name
+                    )
+                )
+
+                if (
+                        stored_value
+                        == actual_value
+                ):
+                    continue
+
+                print(
+                    "[RESUME INVALID PASS]",
+                    question_id,
+                    mode,
+                    field_name,
+                    "mismatch:",
+                    "stored=",
+                    stored_value,
+                    "actual=",
+                    actual_value,
+                )
+
+                screenshot_metadata_valid = False
+                break
+
+            if not screenshot_metadata_valid:
                 continue
 
             passed.add(
