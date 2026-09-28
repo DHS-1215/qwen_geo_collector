@@ -177,6 +177,86 @@ rem ============================================================
 
 echo [4/7] Prepare Ollama model: %OLLAMA_MODEL%
 
+"!OLLAMA_EXE!" list | findstr /I /C:"qwen2.5:7b" >nul
+
+if not errorlevel 1 (
+    echo [PASS] Ollama model already exists
+    goto :MODEL_READY
+)
+
+if defined OLLAMA_MODELS (
+    set "OLLAMA_MODEL_ROOT=%OLLAMA_MODELS%"
+) else (
+    set "OLLAMA_MODEL_ROOT=%USERPROFILE%\.ollama\models"
+)
+
+echo [INFO] Ollama model root:
+echo !OLLAMA_MODEL_ROOT!
+
+set "OFFLINE_MODEL_ZIP="
+
+for /f "delims=" %%F in ('dir /b /a-d /o-d "%~dp0qwen2.5_7b_ollama_model_*.zip" 2^>nul') do (
+    if not defined OFFLINE_MODEL_ZIP (
+        set "OFFLINE_MODEL_ZIP=%~dp0%%F"
+    )
+)
+
+if defined OFFLINE_MODEL_ZIP (
+    echo [INFO] Offline Ollama model package found:
+    echo !OFFLINE_MODEL_ZIP!
+
+    set "OFFLINE_TEMP=%TEMP%\qwen_ollama_model_import"
+
+    if exist "!OFFLINE_TEMP!" (
+        rmdir /s /q "!OFFLINE_TEMP!"
+    )
+
+    mkdir "!OFFLINE_TEMP!"
+
+    echo [INFO] Extracting offline model package...
+
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath '!OFFLINE_MODEL_ZIP!' -DestinationPath '!OFFLINE_TEMP!' -Force"
+
+    if errorlevel 1 (
+        echo [ERROR] Failed to extract offline model package.
+        goto :FAIL
+    )
+
+    if not exist "!OLLAMA_MODEL_ROOT!" (
+        mkdir "!OLLAMA_MODEL_ROOT!"
+    )
+
+    echo [INFO] Installing offline Ollama model...
+
+    xcopy ^
+        "!OFFLINE_TEMP!\models\*" ^
+        "!OLLAMA_MODEL_ROOT!\" ^
+        /E /I /Y >nul
+
+    if errorlevel 1 (
+        echo [ERROR] Failed to copy offline Ollama model.
+        goto :FAIL
+    )
+
+    rmdir /s /q "!OFFLINE_TEMP!"
+
+    echo [INFO] Verifying offline model...
+
+    "!OLLAMA_EXE!" list | findstr /I /C:"qwen2.5:7b" >nul
+
+    if errorlevel 1 (
+        echo [ERROR] Ollama cannot detect qwen2.5:7b after offline import.
+        goto :FAIL
+    )
+
+    echo [PASS] Offline Ollama model imported successfully
+    goto :MODEL_READY
+)
+
+echo [WARN] Offline model package not found.
+echo [INFO] Falling back to online model pull...
+
 "!OLLAMA_EXE!" pull "%OLLAMA_MODEL%"
 
 if errorlevel 1 (
@@ -184,7 +264,15 @@ if errorlevel 1 (
     goto :FAIL
 )
 
-echo [PASS] Ollama model ready
+"!OLLAMA_EXE!" list | findstr /I /C:"qwen2.5:7b" >nul
+
+if errorlevel 1 (
+    echo [ERROR] Ollama model verification failed.
+    goto :FAIL
+)
+
+:MODEL_READY
+echo [PASS] Ollama model ready: %OLLAMA_MODEL%
 echo.
 
 rem ============================================================
