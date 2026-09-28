@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import time
@@ -21,6 +21,9 @@ from app.qwen.runner import (
 )
 from app.qwen.serialization import (
     write_result_json,
+)
+from app.qwen.screenshot import (
+    capture_qwen_screenshot,
 )
 from app.qwen.tasks import (
     QwenTask,
@@ -80,6 +83,23 @@ class QwenBatchRunner:
         return (
                 self.output_dir
                 / filename
+        )
+
+    def _build_screenshot_path(
+            self,
+            task: QwenTask,
+    ) -> tuple[Path, str]:
+        relative_path = (
+            Path("screenshots")
+            / (
+                f"{task.question_id}_"
+                f"{task.mode}.png"
+            )
+        )
+
+        return (
+            self.output_dir / relative_path,
+            relative_path.as_posix(),
         )
 
     def _write_task_issue(
@@ -368,6 +388,41 @@ class QwenBatchRunner:
         # question_id 由 Batch 层补充。
         result.question_id = (
             task.question_id
+        )
+
+        (
+            screenshot_output_path,
+            screenshot_relative_path,
+        ) = self._build_screenshot_path(
+            task
+        )
+
+        screenshot = (
+            capture_qwen_screenshot(
+                self.runner.page,
+                screenshot_output_path,
+            )
+        )
+
+        result.screenshot_path = (
+            screenshot_relative_path
+        )
+        result.screenshot_sha256 = (
+            screenshot.sha256
+        )
+        result.screenshot_size_bytes = (
+            screenshot.size_bytes
+        )
+        result.screenshot_width = (
+            screenshot.width
+        )
+        result.screenshot_height = (
+            screenshot.height
+        )
+
+        print(
+            "[SCREENSHOT]",
+            screenshot_relative_path,
         )
 
         output_path = (
