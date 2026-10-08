@@ -5,18 +5,10 @@ title Qwen GEO One Click Pipeline
 cd /d "%~dp0"
 
 rem ============================================================
-rem User config
+rem Common config
 rem ============================================================
 
-set "INPUT_CSV=input\questions_w3_8.csv"
 set "OUTPUT_ROOT=output"
-
-set "PRODUCT_ID=hongmao"
-set "PRODUCT_NAME=鸿茅药酒"
-
-set "TARGET_ID=hongmao"
-set "TARGET_ALIAS_1=鸿茅药酒"
-set "TARGET_ALIAS_2=鸿茅"
 
 set "OLLAMA_MODEL=qwen2.5:7b"
 set "GEO_ROOT=%~dp0..\geo_analysis_system"
@@ -59,7 +51,7 @@ echo.
 set "RUN_MODE="
 set /p "RUN_MODE=Select: "
 
-if "%RUN_MODE%"=="1" goto :NEW_RUN
+if "%RUN_MODE%"=="1" goto :PRODUCT_MENU
 if "%RUN_MODE%"=="2" goto :RESUME_RUN
 if "%RUN_MODE%"=="0" exit /b 0
 
@@ -69,10 +61,92 @@ goto :MENU
 
 
 rem ============================================================
+rem Product menu
+rem ============================================================
+
+:PRODUCT_MENU
+
+echo.
+echo ============================================================
+echo Select product
+echo ============================================================
+echo [1] \u9e3f\u8305\u836f\u9152
+echo [2] \u5929\u76ca\u5bff\u6c14\u8840\u56fa\u672c\u53e3\u670d\u6db2
+echo [0] Back
+echo ============================================================
+echo.
+
+set "PRODUCT_SELECT="
+set /p "PRODUCT_SELECT=Select: "
+
+if "%PRODUCT_SELECT%"=="1" (
+    set "PRODUCT_KEY=hongmao"
+    call :LOAD_PRODUCT_CONFIG
+    goto :NEW_RUN
+)
+
+if "%PRODUCT_SELECT%"=="2" (
+    set "PRODUCT_KEY=tianyishou"
+    call :LOAD_PRODUCT_CONFIG
+    goto :NEW_RUN
+)
+
+if "%PRODUCT_SELECT%"=="0" goto :MENU
+
+echo.
+echo [ERROR] Invalid product selection.
+goto :PRODUCT_MENU
+
+
+rem ============================================================
+rem Product config
+rem ============================================================
+
+:LOAD_PRODUCT_CONFIG
+
+if "%PRODUCT_KEY%"=="hongmao" (
+    set "INPUT_CSV=input\questions_w3_8.csv"
+
+    set "PRODUCT_ID=hongmao"
+    set "PRODUCT_NAME=\u9e3f\u8305\u836f\u9152"
+
+    set "TARGET_ID=hongmao"
+    set "TARGET_ALIAS_1=\u9e3f\u8305\u836f\u9152"
+    set "TARGET_ALIAS_2=\u9e3f\u8305"
+    set "TARGET_ALIAS_3="
+
+    exit /b 0
+)
+
+if "%PRODUCT_KEY%"=="tianyishou" (
+    set "INPUT_CSV=input\qixueguben_questions.csv"
+
+    set "PRODUCT_ID=tianyishou"
+    set "PRODUCT_NAME=\u5929\u76ca\u5bff\u6c14\u8840\u56fa\u672c\u53e3\u670d\u6db2"
+
+    set "TARGET_ID=tianyishou"
+    set "TARGET_ALIAS_1=\u5929\u76ca\u5bff\u6c14\u8840\u56fa\u672c\u53e3\u670d\u6db2"
+    set "TARGET_ALIAS_2=\u6c14\u8840\u56fa\u672c\u53e3\u670d\u6db2"
+    set "TARGET_ALIAS_3=\u5929\u76ca\u5bff"
+
+    exit /b 0
+)
+
+echo.
+echo [ERROR] Unknown product key: %PRODUCT_KEY%
+exit /b 1
+
+
+rem ============================================================
 rem New run
 rem ============================================================
 
 :NEW_RUN
+
+if not defined PRODUCT_KEY (
+    echo [ERROR] PRODUCT_KEY is empty.
+    goto :MENU
+)
 
 for /f %%I in (
     'powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"'
@@ -80,9 +154,9 @@ for /f %%I in (
     set "RUN_TS=%%I"
 )
 
-set "BATCH_ID=qwen-!RUN_TS!"
-set "OUTPUT_DIR=%OUTPUT_ROOT%\run_!RUN_TS!"
-set "PACKAGE_PATH=%OUTPUT_ROOT%\qwen_geo_!RUN_TS!.zip"
+set "BATCH_ID=qwen-!PRODUCT_KEY!-!RUN_TS!"
+set "OUTPUT_DIR=%OUTPUT_ROOT%\run_!PRODUCT_KEY!_!RUN_TS!"
+set "PACKAGE_PATH=%OUTPUT_ROOT%\qwen_geo_!PRODUCT_KEY!_!RUN_TS!.zip"
 
 set "PACKAGE_ABS=%~dp0!PACKAGE_PATH!"
 
@@ -111,6 +185,7 @@ set "RUN_TS="
 set "BATCH_ID="
 set "OUTPUT_DIR="
 set "PACKAGE_PATH="
+set "PRODUCT_KEY="
 
 for /f "usebackq tokens=1,* delims==" %%A in (
     "%STATE_FILE%"
@@ -122,6 +197,11 @@ if not defined RUN_TS goto :INVALID_STATE
 if not defined BATCH_ID goto :INVALID_STATE
 if not defined OUTPUT_DIR goto :INVALID_STATE
 if not defined PACKAGE_PATH goto :INVALID_STATE
+if not defined PRODUCT_KEY goto :INVALID_STATE
+
+call :LOAD_PRODUCT_CONFIG
+
+if errorlevel 1 goto :INVALID_STATE
 
 if not exist "!OUTPUT_DIR!" (
     echo.
@@ -137,6 +217,7 @@ set "IS_RESUME=1"
 
 echo.
 echo [RESUME] Previous unfinished run loaded.
+echo [PRODUCT] !PRODUCT_NAME!
 echo.
 
 goto :RUN_PIPELINE
@@ -153,7 +234,9 @@ echo ============================================================
 echo Qwen GEO One Click Pipeline
 echo ============================================================
 echo [MODE] !IS_RESUME!
-echo [INPUT] %INPUT_CSV%
+echo [PRODUCT] !PRODUCT_NAME!
+echo [PRODUCT ID] !PRODUCT_ID!
+echo [INPUT] !INPUT_CSV!
 echo [OUTPUT] !OUTPUT_DIR!
 echo [BATCH] !BATCH_ID!
 echo [ZIP] !PACKAGE_PATH!
@@ -166,9 +249,9 @@ if not exist "%QWEN_PYTHON%" (
     goto :FAIL
 )
 
-if not exist "%INPUT_CSV%" (
+if not exist "!INPUT_CSV!" (
     echo [ERROR] Input CSV not found:
-    echo %INPUT_CSV%
+    echo !INPUT_CSV!
     goto :FAIL
 )
 
@@ -302,6 +385,7 @@ if "!IS_RESUME!"=="0" (
         echo BATCH_ID=!BATCH_ID!
         echo OUTPUT_DIR=!OUTPUT_DIR!
         echo PACKAGE_PATH=!PACKAGE_PATH!
+        echo PRODUCT_KEY=!PRODUCT_KEY!
     )
 
     echo [STATE] New run state saved:
@@ -316,17 +400,24 @@ rem ============================================================
 
 echo [3/4] Run Qwen collection, analysis and package export
 
+set "TARGET_ALIAS_3_ARG="
+
+if defined TARGET_ALIAS_3 (
+    set TARGET_ALIAS_3_ARG=--target-alias "!TARGET_ALIAS_3!"
+)
+
 "%QWEN_PYTHON%" ^
     -m app.qwen.pipeline ^
-    --input "%INPUT_CSV%" ^
+    --input "!INPUT_CSV!" ^
     --output "!OUTPUT_DIR!" ^
     --package "!PACKAGE_PATH!" ^
     --batch-id "!BATCH_ID!" ^
-    --product-id "%PRODUCT_ID%" ^
-    --product-name "%PRODUCT_NAME%" ^
-    --target-id "%TARGET_ID%" ^
-    --target-alias "%TARGET_ALIAS_1%" ^
-    --target-alias "%TARGET_ALIAS_2%" ^
+    --product-id "!PRODUCT_ID!" ^
+    --product-name "!PRODUCT_NAME!" ^
+    --target-id "!TARGET_ID!" ^
+    --target-alias "!TARGET_ALIAS_1!" ^
+    --target-alias "!TARGET_ALIAS_2!" ^
+    !TARGET_ALIAS_3_ARG! ^
     !RESUME_ARG!
 
 set "PIPELINE_EXIT=!ERRORLEVEL!"
@@ -334,10 +425,6 @@ set "PIPELINE_EXIT=!ERRORLEVEL!"
 if not "!PIPELINE_EXIT!"=="0" (
 
     echo.
-
-    rem --------------------------------------------------------
-    rem Check whether this was an intentional blocked/pause state
-    rem --------------------------------------------------------
 
     if exist "!OUTPUT_DIR!\batch_summary.json" (
 
@@ -409,6 +496,7 @@ echo.
 echo ============================================================
 echo SUCCESS
 echo ============================================================
+echo [PRODUCT] !PRODUCT_NAME!
 echo ZIP is ready for GEO frontend import:
 echo !PACKAGE_ABS!
 echo.
@@ -417,42 +505,25 @@ echo ============================================================
 echo.
 
 explorer.exe /select,"!PACKAGE_ABS!"
-
-pause
 exit /b 0
 
 
 rem ============================================================
-rem Paused because quota/risk/refusal blocked collection
+rem Paused
 rem ============================================================
 
 :PAUSED
 
 echo.
 echo ============================================================
-echo COLLECTION INCOMPLETE
+echo COLLECTION PAUSED
 echo ============================================================
+echo [PRODUCT] !PRODUCT_NAME!
+echo [OUTPUT] !OUTPUT_DIR!
 echo.
-echo The current batch is BLOCKED or PARTIAL.
-echo No final ZIP was generated.
-echo.
-echo Output directory:
-echo !OUTPUT_DIR!
-echo.
-echo Resume state:
-echo %STATE_FILE%
-echo.
-echo If the current Qwen account has no remaining quota:
-echo.
-echo   1. Open the Qwen Chrome window.
-echo   2. Sign out of the current account.
-echo   3. Sign in to another authorized account.
-echo   4. Confirm Qwen works normally.
-echo   5. Run this BAT again.
-echo   6. Select [2] Resume last unfinished collection.
-echo.
-echo Previously PASS tasks will be skipped.
-echo Failed or blocked tasks will be executed again.
+echo Resume state was kept.
+echo Run this BAT again and choose:
+echo [2] Resume last unfinished collection
 echo ============================================================
 echo.
 
@@ -461,7 +532,7 @@ exit /b !PIPELINE_EXIT!
 
 
 rem ============================================================
-rem Invalid saved state
+rem Invalid state
 rem ============================================================
 
 :INVALID_STATE
@@ -470,19 +541,19 @@ echo.
 echo ============================================================
 echo INVALID RESUME STATE
 echo ============================================================
-echo State file:
-echo %STATE_FILE%
+echo [STATE FILE] %STATE_FILE%
 echo.
-echo Delete the state file if this old run is no longer needed.
+echo The saved state is incomplete or invalid.
+echo Delete the state file manually only if you want to abandon it.
 echo ============================================================
 echo.
 
 pause
-exit /b 1
+goto :MENU
 
 
 rem ============================================================
-rem Generic failure
+rem Fail
 rem ============================================================
 
 :FAIL
@@ -491,9 +562,9 @@ echo.
 echo ============================================================
 echo FAILED
 echo ============================================================
-echo Please read the error above.
+echo [PRODUCT] !PRODUCT_NAME!
 echo.
-echo The resume state is NOT deleted automatically.
+echo Check the error above.
 echo ============================================================
 echo.
 
