@@ -16,6 +16,27 @@ class QwenSource(BaseModel):
     url: str
 
 
+class QwenSourceQuality(BaseModel):
+    # unknown is used for historical results without diagnostics.
+    status: Literal[
+        "unknown",
+        "success",
+        "partial_success",
+        "links_unavailable",
+        "panel_unavailable",
+        "unreadable_cards",
+        "extraction_incomplete",
+        "no_visible_source_entry",
+    ] = "unknown"
+
+    source_entry_detected: bool = False
+    source_card_count: int = Field(default=0, ge=0)
+    valid_source_count: int = Field(default=0, ge=0)
+    invalid_url_count: int = Field(default=0, ge=0)
+    unreadable_card_count: int = Field(default=0, ge=0)
+    workflow_link_count: int = Field(default=0, ge=0)
+
+
 class QwenAnswerResult(BaseModel):
     platform: str = "qwen"
 
@@ -36,6 +57,10 @@ class QwenAnswerResult(BaseModel):
 
     sources: list[QwenSource] = Field(
         default_factory=list
+    )
+
+    source_quality: QwenSourceQuality = Field(
+        default_factory=QwenSourceQuality
     )
 
     screenshot_path: str | None = None

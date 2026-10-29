@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from urllib.parse import urlsplit
 
 from playwright.sync_api import (
     Locator,
@@ -18,6 +19,7 @@ from app.qwen.exceptions import (
 from app.qwen.models import (
     QwenAnswerResult,
     QwenSource,
+    QwenSourceQuality,
 )
 from app.qwen.selectors import (
     ANSWER_FEEDBACK_SELECTOR,
@@ -640,6 +642,13 @@ class QwenRunner:
             )
         )
 
+        self._last_source_panel_diagnostics = {
+            "entry_detected": bool(req_id),
+            "source_card_count": 0,
+            "invalid_url_count": 0,
+            "unreadable_card_count": 0,
+        }
+
         print(
             "[QUICK SOURCE] req_id:",
             req_id,
@@ -656,6 +665,7 @@ class QwenRunner:
             answer_wrap,
             req_id,
         )
+        self._last_source_panel_diagnostics["source_card_count"] = len(cards)
 
         print(
             "[QUICK SOURCE] raw cards:",
@@ -673,12 +683,14 @@ class QwenRunner:
             )
 
             if not raw:
+                self._last_source_panel_diagnostics["unreadable_card_count"] += 1
                 continue
 
             try:
                 data = json.loads(raw)
 
             except json.JSONDecodeError:
+                self._last_source_panel_diagnostics["unreadable_card_count"] += 1
                 print(
                     f"[QUICK SOURCE] "
                     f"card {index} invalid JSON"
@@ -701,7 +713,21 @@ class QwenRunner:
                 or ""
             ).strip()
 
-            if not title or not url:
+            try:
+                parsed_url = urlsplit(url)
+                is_http_url = (
+                    parsed_url.scheme in {"http", "https"}
+                    and bool(parsed_url.netloc)
+                )
+            except ValueError:
+                is_http_url = False
+
+            if not is_http_url:
+                self._last_source_panel_diagnostics["invalid_url_count"] += 1
+                continue
+
+            if not title:
+                self._last_source_panel_diagnostics["unreadable_card_count"] += 1
                 continue
 
             if url in seen_urls:
@@ -741,6 +767,70 @@ class QwenRunner:
         )
 
         return sources
+
+    @staticmethod
+    def _build_source_quality(
+            sources: list[QwenSource],
+            *,
+            panel: dict | None = None,
+            workflow_link_count: int = 0,
+    ) -> QwenSourceQuality:
+        panel = panel or {}
+        entry_detected = bool(panel.get("entry_detected", False))
+        card_count = int(panel.get("source_card_count", 0))
+        invalid = int(panel.get("invalid_url_count", 0))
+        unreadable = int(panel.get("unreadable_card_count", 0))
+
+        if sources:
+            status = (
+                "partial_success" if invalid or unreadable else "success"
+            )
+        elif card_count and invalid == card_count:
+            status = "links_unavailable"
+        elif card_count and unreadable == card_count:
+            status = "unreadable_cards"
+        elif card_count or workflow_link_count:
+            status = "extraction_incomplete"
+        elif entry_detected:
+            status = "panel_unavailable"
+        else:
+            status = "no_visible_source_entry"
+
+        return QwenSourceQuality(
+            status=status,
+            source_entry_detected=entry_detected,
+            source_card_count=card_count,
+            valid_source_count=len(sources),
+            invalid_url_count=invalid,
+            unreadable_card_count=unreadable,
+            workflow_link_count=workflow_link_count,
+        )
+
+    def _collect_research_sources(
+            self,
+            answer_wrap: Locator,
+    ) -> tuple[list[QwenSource], QwenSourceQuality]:
+        self._expand_research_sources(answer_wrap)
+        sources = self._extract_sources(answer_wrap)
+
+        workflow_links = answer_wrap.locator(
+            RESEARCH_WORKFLOW_SELECTOR
+        ).locator(SOURCE_LINK_SELECTOR).count()
+        panel_diagnostics: dict = {}
+
+        if not sources:
+            # Research UI can show "N sources" cards without workflow URLs.
+            sources = self._extract_quick_sources(answer_wrap)
+            panel_diagnostics = getattr(
+                self, "_last_source_panel_diagnostics", {}
+            )
+
+        quality = self._build_source_quality(
+            sources,
+            panel=panel_diagnostics,
+            workflow_link_count=workflow_links,
+        )
+        return sources, quality
 
     # =========================================
     # Research 来源
@@ -1347,12 +1437,18 @@ class QwenRunner:
 
         sources: list[QwenSource] = []
         search_queries: list[str] = []
+        source_quality = QwenSourceQuality()
+        self._last_source_panel_diagnostics = {}
 
         if mode == "quick":
             sources = (
                 self._extract_quick_sources(
                     answer_wrap
                 )
+            )
+            source_quality = self._build_source_quality(
+                sources,
+                panel=self._last_source_panel_diagnostics,
             )
 
         elif mode == "research":
@@ -1363,13 +1459,8 @@ class QwenRunner:
                 )
             )
 
-            # 再展开全部来源
-            self._expand_research_sources(
-                answer_wrap
-            )
-
-            # 最后提取来源
-            sources = self._extract_sources(
+            # Research workflow links first, then the footer source panel.
+            sources, source_quality = self._collect_research_sources(
                 answer_wrap
             )
 
@@ -1383,6 +1474,7 @@ class QwenRunner:
             mode_label=MODE_VALUES[mode],
             search_queries=search_queries,
             sources=sources,
+            source_quality=source_quality,
         )
 
     # =========================================

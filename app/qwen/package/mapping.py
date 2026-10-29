@@ -293,6 +293,21 @@ def answer_result_to_geo_answer(
         mode=result.mode,
     )
 
+    quality_status = result.source_quality.status
+    if quality_status in {"unknown", "success"}:
+        validation_status = (
+            "PASS" if result.sources else "PASS_WITH_WARNINGS"
+        )
+        collection_status = (
+            "success" if result.sources else "partial_success"
+        )
+    elif quality_status in {"partial_success", "no_visible_source_entry"}:
+        validation_status = "PASS_WITH_WARNINGS"
+        collection_status = "partial_success"
+    else:
+        validation_status = "PASS_WITH_WARNINGS"
+        collection_status = "partial_success" if result.sources else "failed"
+
     return GeoPackageAnswer(
         answer_id=answer_id,
         task_id=task_id,
@@ -304,13 +319,11 @@ def answer_result_to_geo_answer(
         answer_text_raw=raw_text,
         answer_text_clean=clean_text,
         acquisition_status="success",
-        validation_status="PASS",
+        validation_status=validation_status,
         is_complete=bool(
             clean_text
         ),
-        source_collection_status=(
-            "success"
-        ),
+        source_collection_status=collection_status,
         source_count_raw=len(
             result.sources
         ),
@@ -331,6 +344,7 @@ def answer_result_to_geo_answer(
                 ),
             "citation_mapping_available":
                 result.citation_mapping_available,
+            "source_quality": result.source_quality.model_dump(mode="json"),
             "screenshot_sha256":
                 result.screenshot_sha256,
             "screenshot_size_bytes":
